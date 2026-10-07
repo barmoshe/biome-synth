@@ -56,6 +56,8 @@ export class World {
   private skies: Strip[] = [];
   critters: Critter[] = [];
   camX = 0;
+  /** Reduced motion: fewer particles, slower colour cycling, less weather. */
+  reduced = false;
   phases = new Array(CYCLES.length).fill(0);
   private sparks: Spark[] = [];
   private flakes: Flake[] = [];
@@ -136,6 +138,34 @@ export class World {
     });
   }
 
+  /**
+   * The stage's top row on screen. Tall screens split the extra height: most becomes sky above, a
+   * third becomes underground below, so the creatures sit in the middle of a phone, not at its foot.
+   */
+  get oy() {
+    const extra = this.H - STAGE;
+    return extra > 0 ? Math.round(extra * 0.66) : extra;
+  }
+
+  /** Below the stage on tall screens: the soil continues and darkens with depth. */
+  private underground() {
+    const { W, H, fb } = this;
+    const px = fb.px;
+    const top = this.oy + STAGE;
+    if (top >= H) return;
+    const band = 24; // the stage's deepest rows, repeated downward
+    for (let y = top; y < H; y++) {
+      const d = y - top;
+      const src = (top - band + (d % band)) * W;
+      const dst = y * W;
+      const k = Math.min(3, 1 + Math.floor(d / 14));
+      const t1 = dark[k];
+      const t2 = dark[Math.min(3, k + 1)];
+      const f = (d % 14) / 14;
+      for (let x = 0; x < W; x++) px[dst + x] = (f > bayer(x, y) ? t2 : t1)[px[src + x]];
+    }
+  }
+
   get centerX() {
     return this.camX + this.W / 2;
   }
@@ -153,7 +183,7 @@ export class World {
     sx = ((sx % WORLD) + WORLD) % WORLD;
     if (sx > WORLD - c.w - 16) sx -= WORLD;
     if (sx < -c.w - PAD || sx > this.W + PAD) return null;
-    return [Math.round(sx), c.y + (this.H - STAGE)];
+    return [Math.round(sx), c.y + this.oy];
   }
 
   /** The critter under an art-pixel point, with a few pixels of slack for fingers. */
@@ -194,7 +224,7 @@ export class World {
     const wx = this.camX + s[0] + c.w / 2; // camera space, so sparks survive the world wrapping
     const wy = c.y + 2;
     const colors = [P.goldGlow, P.white, P.mint, P.pink, P.skyLight];
-    const n = from === "player" ? 8 : Math.round(2 + vel * 3);
+    const n = Math.round((from === "player" ? 8 : 2 + vel * 3) * (this.reduced ? 0.4 : 1));
     for (let i = 0; i < n; i++)
       this.sparks.push({ x: wx, y: wy, vx: (Math.random() - 0.5) * 40, vy: -16 - Math.random() * 30, life: 0.6 + Math.random() * 0.5, c: colors[i % colors.length] });
     if (from !== "echo" && role !== "hat") this.sparks.push({ x: wx, y: wy - 6, vx: (Math.random() - 0.5) * 8, vy: -18, life: 1.5, c: P.white, note: true });
@@ -203,7 +233,7 @@ export class World {
   /** A note from open sky: a ring of sparks where the finger is. */
   burst(px: number, py: number, color: number, size = 1) {
     const wx = this.camX + px;
-    const wy = py - (this.H - STAGE);
+    const wy = py - this.oy;
     const n = Math.round(6 + 10 * size);
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
@@ -231,7 +261,7 @@ export class World {
     t.pts.push({ x, y, c, age: 0, w });
     // The head sheds a sparkle now and then, more the faster it goes.
     if (Math.random() < 0.15 + Math.min(0.5, speed / 900))
-      this.sparks.push({ x: this.camX + x, y: y - (this.H - STAGE), vx: (Math.random() - 0.5) * 30, vy: -10 - Math.random() * 20, life: 0.4 + Math.random() * 0.3, c: Math.random() < 0.5 ? P.white : c });
+      this.sparks.push({ x: this.camX + x, y: y - this.oy, vx: (Math.random() - 0.5) * 30, vy: -10 - Math.random() * 20, life: 0.4 + Math.random() * 0.3, c: Math.random() < 0.5 ? P.white : c });
     if (t.pts.length > 400) t.pts.splice(0, t.pts.length - 400);
   }
 
@@ -257,7 +287,7 @@ export class World {
     }
     for (const sp of this.sparks) {
       const dx = sp.x - this.camX - x;
-      const dy = sp.y + (this.H - STAGE) - y;
+      const dy = sp.y + this.oy - y;
       if (dx * dx + dy * dy < R2) (sp.vx += vx * 0.05), (sp.vy += vy * 0.05);
     }
   }
@@ -272,7 +302,7 @@ export class World {
   update(dt: number, levels: { rms: number; low: number; high: number }, beat: number) {
     // Colour cycling: water and aurora flow with the overall level, stars and windows with the treble.
     const speed = [3 + 10 * levels.rms, 1.5 + 6 * levels.rms, 4 + 8 * levels.high, 1 + 10 * levels.high, 4 + 8 * levels.high, 0.6 + 4 * levels.high, 2 + 5 * levels.low, 1 + 6 * levels.high];
-    for (let c = 0; c < this.phases.length; c++) this.phases[c] += dt * speed[c];
+    for (let c = 0; c < this.phases.length; c++) this.phases[c] += dt * speed[c] * (this.reduced ? 0.4 : 1);
     for (const c of this.critters) {
       c.act = Math.max(0, c.act - dt * 2.4);
       c.pre = Math.max(0, c.pre - dt * 8);
@@ -324,7 +354,7 @@ export class World {
     });
     const area = this.W / 300;
     for (const [kind, rate] of Object.entries(kinds)) {
-      let n = rate * area * dt;
+      let n = rate * area * dt * (this.reduced ? 0.4 : 1);
       while (n > 0) {
         if (Math.random() < n) this.flakes.push(this.spawn(kind));
         n -= 1;
@@ -368,7 +398,7 @@ export class World {
   private drawLayer(li: number) {
     const { W, fb } = this;
     const px = fb.px;
-    const oy = this.H - STAGE;
+    const oy = this.oy;
     const L = this.layers[li];
     const lw = L.w;
     // Every layer is centred on the same world point, so the biome behind matches the one in front.
@@ -505,7 +535,7 @@ export class World {
   render(ctx: CanvasRenderingContext2D, t: number, levels: { rms: number }, beat: number) {
     const { W, H, fb } = this;
     const px = fb.px;
-    const oy = H - STAGE;
+    const oy = this.oy;
 
     // Sky: the two skies under the camera, dissolved by weight.
     const [a, b, wb] = pairAt(this.centerX);
@@ -520,6 +550,7 @@ export class World {
       }
 
     for (let li = 0; li < FRONT; li++) this.drawLayer(li);
+    this.underground();
 
     // Living scenery of the biomes under the camera, dissolved by weight at a border.
     {

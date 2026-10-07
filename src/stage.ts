@@ -6,10 +6,12 @@ import type { NoteEvent } from "./audio/dsp/core";
 import { Conductor, type Composer } from "./music/conductor";
 import type { Section } from "./music/pattern";
 import type { Out } from "./music/world";
-import { BIOMES, ROLES, type Role } from "./shared/biomes";
+import { ROLES, type Role } from "./shared/biomes";
 import { P } from "./world/palette";
 import { BW, STAGE, WORLD } from "./world/types";
 import { World, type Critter } from "./world/world";
+import { loadPrefs, reducedMotion, savePrefs, type Prefs } from "./ui/prefs";
+import { MAX_SECONDS, shareOrSave, startRecording, type Recording } from "./ui/recorder";
 
 export type Snapshot = {
   started: boolean;
@@ -27,11 +29,24 @@ export type Snapshot = {
   pos: number;
   bandMode: "local" | "claude" | "waking";
   help: boolean;
+  menu: boolean;
+  /** A message when something cannot work here (no AudioWorklet, audio blocked). */
+  error: string | null;
+  /** First-run guide: 0 tap a creature, 1 slide the sky, 2 flick, 3 travel, 4 done. */
+  coach: number;
+  /** Where the guide points, in CSS pixels. */
+  coachAt: { x: number; y: number } | null;
+  /** Seconds recorded so far, or null when not recording. */
+  recording: number | null;
+  /** A short notice (saved, shared). */
+  toast: string | null;
+  prefs: Prefs;
 };
 
 const DRIFT = [0, 9, 26];
 /** Note colours by scale degree: the ribbon and the bursts share them. */
 const NOTE_C = [P.goldGlow, P.mint, P.skyLight, P.pink, P.lime, P.lilac, P.peach];
+const IDLE_MS = 20000;
 
 let held = 1;
 const nextId = () => ++held;
@@ -68,12 +83,18 @@ export class Stage {
   private pointers = new Map<number, Pointer>();
   private bedTimer = 0;
   private listeners = new Set<() => void>();
+  private lastInput = performance.now();
+  private soloTimer = 0;
+  private coachTimer = 0;
+  private rec: Recording | null = null;
+  private prefs: Prefs = loadPrefs();
   snap: Snapshot;
 
   constructor() {
     const seed = (Math.random() * 1e9) | 0;
     // The journey starts in Orbit, the first biome.
     this.world.camX = BW / 2 - 250;
+    this.world.reduced = reducedMotion(this.prefs);
     this.conductor = new Conductor({
       seed,
       target: () => this.world.dominant(),
@@ -101,6 +122,7 @@ export class Stage {
   private makeSnap(started: boolean): Snapshot {
     const w = this.world.weights();
     const c = this.conductor.section;
+    const s = this.snap as Snapshot | undefined;
     return {
       started,
       biome: this.world.dominant(),
@@ -111,10 +133,17 @@ export class Stage {
       bpm: this.conductor.world.bpm,
       bridging: this.conductor.transitioning,
       bars: c.bars,
-      drift: this.snap?.drift ?? 1,
+      drift: s?.drift ?? this.prefs.drift,
       pos: (((this.world.centerX % WORLD) + WORLD) % WORLD) / WORLD,
-      bandMode: this.snap?.bandMode ?? "local",
-      help: this.snap?.help ?? false,
+      bandMode: s?.bandMode ?? "local",
+      help: s?.help ?? false,
+      menu: s?.menu ?? false,
+      error: s?.error ?? null,
+      coach: s?.coach ?? (this.prefs.coached ? 4 : 0),
+      coachAt: s?.coachAt ?? null,
+      recording: s?.recording ?? null,
+      toast: s?.toast ?? null,
+      prefs: this.prefs,
     };
   }
   private emit(patch: Partial<Snapshot> = {}) {
@@ -167,6 +196,8 @@ export class Stage {
     while (k > 1 && vh / k < 216) k--;
     while (vh / k > 288) k++;
     k = Math.max(1, Math.min(k, Math.floor(vw / 280)));
+    // Portrait phones: the width decides, about 250 art pixels across, so creatures stay big.
+    if (vh > vw * 1.2) k = Math.max(1, Math.round(vw / 250));
     const W = Math.ceil(vw / k);
     const H = Math.ceil(vh / k);
     this.scale = k / dpr;
@@ -187,8 +218,18 @@ export class Stage {
 
   /** First gesture: build the engine and start the band. */
   async start() {
-    if (this.engine) return;
-    const e = await getEngine();
+    if (this.engine || this.snap.error) return;
+    if (typeof AudioWorkletNode === "undefined" || typeof AudioContext === "undefined") {
+      this.emit({ error: "This browser cannot run the synth. Try a recent Chrome, Safari, Firefox or Edge." });
+      return;
+    }
+    let e: Engine;
+    try {
+      e = await getEngine();
+    } catch {
+      this.emit({ error: "Sound could not start here. Check that audio is allowed for this site, then reload." });
+      return;
+    }
     this.engine = e;
     const ctx = e.ctx;
     const clock = new Clock({ now: () => ctx.currentTime, every: (ms, fn) => { const id = setInterval(fn, ms); return () => clearInterval(id); } }, this.conductor.stepSec);
@@ -196,10 +237,12 @@ export class Stage {
     this.clock = clock;
     const now = ctx.currentTime + 0.05;
     e.setFx(this.conductor.world.fx, now, 0);
+    e.setVolume(this.prefs.muted ? 0 : this.prefs.volume);
     this.postBed();
     // A three-note hello so you know sound works, then the band.
     [0, 0.5, 1].forEach((x, i) => this.play(this.conductor.sky(0, x, { bright: 0.6, speed: 0, pan: x - 0.5 }), now + i * 0.12, true));
     clock.start(now + 0.5);
+    this.lastInput = performance.now();
     this.emit({ started: true });
   }
 
@@ -207,6 +250,72 @@ export class Stage {
     this.conductor.setComposer(c);
     this.emit({ bandMode: mode });
   }
+
+  // ---------- settings, guide, recording ----------
+
+  private setPrefs(patch: Partial<Prefs>) {
+    this.prefs = { ...this.prefs, ...patch };
+    savePrefs(this.prefs);
+    this.world.reduced = reducedMotion(this.prefs);
+    this.engine?.setVolume(this.prefs.muted ? 0 : this.prefs.volume);
+    this.emit({ prefs: this.prefs });
+  }
+  setVolume(v: number) {
+    this.setPrefs({ volume: v, muted: false });
+  }
+  toggleMute() {
+    this.setPrefs({ muted: !this.prefs.muted });
+  }
+  setMotion(m: Prefs["motion"]) {
+    this.setPrefs({ motion: m });
+  }
+  toggleMenu(v?: boolean) {
+    this.emit({ menu: v ?? !this.snap.menu });
+  }
+  toggleHelp(v?: boolean) {
+    this.emit({ help: v ?? !this.snap.help, menu: false });
+  }
+  cycleDrift() {
+    const drift = ((this.snap.drift + 1) % 3) as 0 | 1 | 2;
+    this.setPrefs({ drift });
+    this.emit({ drift });
+  }
+  toast(msg: string) {
+    this.emit({ toast: msg });
+    setTimeout(() => {
+      if (this.snap.toast === msg) this.emit({ toast: null });
+    }, 2600);
+  }
+
+  /** Move the guide on when the player does what it asked. */
+  private coached(step: number) {
+    if (this.snap.coach !== step) return;
+    const next = step + 1;
+    if (next >= 4) this.setPrefs({ coached: true });
+    this.emit({ coach: next, coachAt: null });
+  }
+  skipCoach() {
+    this.setPrefs({ coached: true });
+    this.emit({ coach: 4, coachAt: null });
+  }
+
+  async toggleRecording() {
+    const e = this.engine;
+    if (!e || !this.canvas) return;
+    if (this.rec) {
+      const rec = this.rec;
+      this.rec = null;
+      this.emit({ recording: null });
+      const file = await rec.stop();
+      if (file) this.toast((await shareOrSave(file)) === "shared" ? "Shared" : "Saved");
+      return;
+    }
+    this.rec = startRecording(e, this.canvas);
+    if (!this.rec) return this.toast("Recording is not supported in this browser");
+    this.emit({ recording: 0, menu: false });
+  }
+
+  // ---------- sound ----------
 
   private onStep(step: number, time: number) {
     const c = this.conductor;
@@ -289,17 +398,55 @@ export class Stage {
       }
       if (this.clock) {
         const spb = this.conductor.world.stepsPerBeat;
-        beat = ((this.audibleStep() % spb) + spb) % spb / spb;
+        beat = (((this.audibleStep() % spb) + spb) % spb) / spb;
       }
       this.bedTimer -= dt;
       if (this.bedTimer <= 0) {
         this.bedTimer = 0.2;
         this.postBed();
       }
+
+      // Left alone for a while, the creatures start to solo (Bloom plays itself, too).
+      if (now - this.lastInput > IDLE_MS) {
+        this.soloTimer -= dt;
+        if (this.soloTimer <= 0) {
+          this.soloTimer = 1.6 + Math.random() * 2.4;
+          const vis = w.critters.filter((k) => w.screenOf(k));
+          const c = vis[Math.floor(Math.random() * vis.length)];
+          if (c) {
+            this.play(this.conductor.solo(this.audibleStep(), c.role), t + 0.02, true);
+            w.play(c.role, "band", 0.8, c);
+          }
+        }
+      }
+    }
+
+    // The guide points at the creature nearest the middle, a few times a second.
+    if (this.snap.started && this.snap.coach === 0) {
+      this.coachTimer -= dt;
+      if (this.coachTimer <= 0) {
+        this.coachTimer = 0.25;
+        let at: { x: number; y: number } | null = null;
+        const r = this.canvas?.getBoundingClientRect();
+        const vis = w.critters.filter((k) => k.y > 120 && w.screenOf(k));
+        vis.sort((a, b) => Math.abs(w.screenOf(a)![0] - w.W / 2) - Math.abs(w.screenOf(b)![0] - w.W / 2));
+        if (vis[0] && r) {
+          const [sx, sy] = w.screenOf(vis[0])!;
+          at = { x: r.left + (sx + vis[0].w / 2) * this.scale, y: r.top + sy * this.scale };
+        }
+        const prev = this.snap.coachAt;
+        if (!prev !== !at || (prev && at && Math.hypot(prev.x - at.x, prev.y - at.y) > 3)) this.emit({ coachAt: at });
+      }
     }
 
     w.update(dt, this.levels, beat);
     if (this.ctx) w.render(this.ctx, now / 1000, this.levels, beat);
+    if (this.rec && this.canvas) {
+      this.rec.frame(this.canvas);
+      const secs = Math.floor((now - this.rec.started) / 1000);
+      if (secs >= MAX_SECONDS) void this.toggleRecording();
+      else if (secs !== this.snap.recording) this.emit({ recording: secs });
+    }
 
     // The HUD only needs a few updates a second.
     const b = w.dominant();
@@ -316,6 +463,8 @@ export class Stage {
 
   private onDown = async (e: PointerEvent) => {
     e.preventDefault();
+    this.lastInput = performance.now();
+    if (this.snap.menu) this.toggleMenu(false);
     if (!this.engine) {
       await this.start();
       return;
@@ -324,9 +473,11 @@ export class Stage {
     const critter = this.world.pick(x, y);
     const info: Pointer = { critter, over: critter, x, y, t: performance.now(), vx: 0, vy: 0, moved: 0 };
     this.pointers.set(e.pointerId, info);
-    if (critter) this.tapCritter(critter, info);
-    else info.lastDeg = this.skyNote(x, y, 0);
-    this.world.trail(e.pointerId, x, y, NOTE_C[(info.lastDeg ?? 0) % NOTE_C.length]);
+    if (critter) {
+      this.tapCritter(critter, info);
+      this.coached(0);
+    } else info.lastDeg = this.skyNote(x, y, 0);
+    this.world.trail(e.pointerId, x, y, NOTE_C[(((info.lastDeg ?? 0) % NOTE_C.length) + NOTE_C.length) % NOTE_C.length]);
     navigator.vibrate?.(8);
   };
 
@@ -339,6 +490,7 @@ export class Stage {
     }
     const info = this.pointers.get(e.pointerId);
     if (!info || !this.engine) return;
+    this.lastInput = performance.now();
     const [x, y] = this.toArt(e);
     const now = performance.now();
     const dt = Math.max(1, now - info.t) / 1000;
@@ -352,7 +504,7 @@ export class Stage {
     const speed = Math.hypot(info.vx, info.vy);
 
     // The ribbon follows the finger, and the finger stirs the weather.
-    this.world.trail(e.pointerId, x, y, NOTE_C[(info.lastDeg ?? 0) % NOTE_C.length], speed);
+    this.world.trail(e.pointerId, x, y, NOTE_C[(((info.lastDeg ?? 0) % NOTE_C.length) + NOTE_C.length) % NOTE_C.length], speed);
     this.world.stir(x, y, info.vx, info.vy);
 
     // Sweeping over creatures strums them, each once per pass.
@@ -368,6 +520,7 @@ export class Stage {
     // Sliding across the sky plays each new note it crosses: fast is short and bright, slow sings.
     const deg = this.skyDeg(x);
     if (deg !== info.lastDeg) info.lastDeg = this.skyNote(x, y, speed);
+    if (info.moved > 60 && !info.critter) this.coached(1);
   };
 
   private onUp = (e: PointerEvent) => {
@@ -400,26 +553,32 @@ export class Stage {
       colors.push(NOTE_C[c.skyDeg(x) % NOTE_C.length]);
     }
     this.world.fling(info.x, info.y, info.vx, info.vy, colors, sec);
+    this.coached(2);
     navigator.vibrate?.([6, 30, 6]);
   }
 
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
     this.travel = null;
+    this.lastInput = performance.now();
     this.world.camX += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * 0.4;
   };
 
   private onKey = (e: KeyboardEvent) => {
-    if (e.target instanceof HTMLElement && (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") && e.key === " ") return;
+    if (e.target instanceof HTMLElement && (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") && (e.key === " " || e.key === "Enter")) return;
+    this.lastInput = performance.now();
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       this.keysHeld.add(e.key);
       this.travel = null;
+      this.coached(3);
       e.preventDefault();
       return;
     }
-    if (e.key === "h" || e.key === "H" || e.key === "?") return this.emit({ help: !this.snap.help });
-    if (e.key === "Escape") return this.emit({ help: false });
+    if (e.key === "h" || e.key === "H" || e.key === "?") return this.toggleHelp();
+    if (e.key === "Escape") return this.emit({ help: false, menu: false });
     if (e.key === "d" || e.key === "D") return this.cycleDrift();
+    if (e.key === "m" || e.key === "M") return this.toggleMute();
+    if (e.key === "r" || e.key === "R") return void this.toggleRecording();
     const n = Number(e.key);
     if (n >= 1 && n <= ROLES.length && !e.repeat) {
       void this.start().then(() => {
@@ -427,20 +586,13 @@ export class Stage {
         const c = this.world.critters.find((k) => k.role === role && k.biome === this.world.dominant() && this.world.screenOf(k)) ?? null;
         if (c) this.tapCritter(c, {});
         else this.playRole(role, null);
+        this.coached(0);
       });
     }
   };
   private onKeyUp = (e: KeyboardEvent) => {
     this.keysHeld.delete(e.key);
   };
-
-  cycleDrift() {
-    this.emit({ drift: ((this.snap.drift + 1) % 3) as 0 | 1 | 2 });
-  }
-
-  toggleHelp(v?: boolean) {
-    this.emit({ help: v ?? !this.snap.help });
-  }
 
   /** Glide to the middle of biome i, the shorter way round. */
   goTo(i: number) {
@@ -449,6 +601,8 @@ export class Stage {
     let d = (((target - cur) % WORLD) + WORLD) % WORLD;
     if (d > WORLD / 2) d -= WORLD;
     this.travel = { from: cur, to: cur + d, t: 0 };
+    this.lastInput = performance.now();
+    this.coached(3);
   }
 
   private tapCritter(c: Critter, info: { holdId?: number }) {

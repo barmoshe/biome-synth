@@ -208,6 +208,11 @@ export class Conductor {
     return g === 1 ? outs : outs.map((o) => ({ ...o, note: { ...o.note, vel: Math.min(1, o.note.vel * g) } }));
   }
 
+  /** A creature solos on its own (the idle self-play): like a tap, but not the player's. */
+  solo(step: number, role: Role): Out[] {
+    return this.trim(this.world.tap(role, this.ctx(step))).map((o) => ({ ...o, from: "band" as const, note: { ...o.note, vel: o.note.vel * 0.7 }, throw: 0 }));
+  }
+
   /** The player tapped a creature. */
   tap(step: number, role: Role): Out[] {
     this.lastPlayer = step;
