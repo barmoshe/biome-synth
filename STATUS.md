@@ -3,7 +3,7 @@
 A pixel-art world you play: one looping side-scroller (Orbit, Aurora, Deep, Canopy, Neon), every
 creature is an instrument, each world its own genre, Claude as conductor, an optional Lyria bed.
 Plan: `~/.claude/plans/i-made-the-biome-bright-liskov.md` (approved 2026-10-07). Production
-checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biome-synth`, ADR 0543.
+checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biome-synth`, ADR 0544.
 
 ## Steps
 
