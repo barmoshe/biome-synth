@@ -3,7 +3,8 @@
 // The light is the pink moon and the signs, upper left.
 import { cyc, P, R } from "../palette";
 import { bayer, hash, noise1, type Strip } from "../strip";
-import { GROUND, type BiomeArt, type CritterSpec, type PaintCtx } from "../types";
+import { GROUND, type BiomeArt, type CritterSpec, type LiveCtx, type PaintCtx } from "../types";
+import { loopX } from "../live";
 
 const LX = -0.6;
 const LY = -0.8;
@@ -259,6 +260,45 @@ export const neon: BiomeArt = {
       s.rect(cx, 246, 90, 2, P.charcoal);
       for (let i = 0; i <= 90; i += 15) s.rect(cx + i, 246, 2, 24, P.charcoal);
       s.box(cx + 120, 248, 8, 22, R.red, LX);
+    }
+  },
+  live(f: Strip, c: LiveCtx) {
+    // Searchlights sweeping the clouds.
+    for (let k = 0; k < 2; k++) {
+      const bx = loopX(260 + k * 330 - c.camX * 0.7, c.W, 100);
+      const ang = -Math.PI / 2 + Math.sin(c.t * 0.35 + k * 2) * 0.5;
+      for (let r = 0; r < 160; r++) {
+        const spread = r * 0.07;
+        for (let j = -spread; j <= spread; j++) {
+          const x = Math.round(bx + Math.cos(ang) * r - Math.sin(ang) * j);
+          const y = Math.round(c.oy + 170 + Math.sin(ang) * r + Math.cos(ang) * j);
+          if (bayer(x, y) < 0.16 - r / 1400) f.set(x, y, P.lilac);
+        }
+      }
+    }
+    // Flying cars in two sky lanes.
+    for (let i = 0; i < 4; i++) {
+      const dir = i % 2 ? 1 : -1;
+      const x = Math.round(loopX(dir * c.t * (40 + i * 9) + i * 170, c.W, 30));
+      const y = c.oy + 34 + (i % 2) * 26 + i * 3;
+      f.rect(x, y, 7, 2, P.charcoal);
+      f.set(dir > 0 ? x + 7 : x - 1, y, P.goldGlow);
+      f.set(dir > 0 ? x - 1 : x + 7, y + 1, P.scarlet);
+    }
+    // Cars on the street with headlight beams.
+    for (let i = 0; i < 3; i++) {
+      const dir = i === 1 ? -1 : 1;
+      const x = Math.round(loopX(dir * c.t * (70 + i * 25) + i * 300 - c.camX, c.W, 60));
+      const y = c.oy + 236 + i * 4;
+      const body = [P.wine, P.navy, P.sageDeep][i];
+      f.rect(x, y, 18, 4, body);
+      f.rect(x + 4, y - 3, 9, 3, P.ink);
+      f.rect(x + 5, y - 2, 3, 1, P.skyLight);
+      f.set(x + 3, y + 4, P.ink), f.set(x + 14, y + 4, P.ink);
+      const front = dir > 0 ? x + 18 : x - 1;
+      f.set(front, y + 1, P.goldGlow);
+      f.set(dir > 0 ? x - 1 : x + 18, y + 1, P.scarlet);
+      for (let r = 1; r < 26; r++) for (let j = -Math.floor(r / 5); j <= Math.floor(r / 5); j++) if (bayer(front + dir * r, y + 1 + j) < 0.35 - r / 80) f.set(front + dir * r, y + 1 + j, P.honey);
     }
   },
   critters: [robot, drone(120, 90), drone(620, 60), drone(1100, 100), vent, boombox, cat, trash, sign],

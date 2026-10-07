@@ -521,6 +521,14 @@ export class World {
 
     for (let li = 0; li < FRONT; li++) this.drawLayer(li);
 
+    // Living scenery of the biomes under the camera, dissolved by weight at a border.
+    {
+      const live = { t, W, H, oy, camX: this.camX, level: levels.rms };
+      const [la, lb, lw] = pairAt(this.centerX);
+      if (lw < 0.97) this.art[la].live?.(this.fb, live);
+      if (lb !== la && lw > 0.03) this.art[lb].live?.(this.fb, live);
+    }
+
     // Lights for this frame: critters that glow, critters that just played, fireflies.
     const frameLights: Light[] = [];
     for (const c of this.critters) {

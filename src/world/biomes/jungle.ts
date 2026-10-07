@@ -3,7 +3,8 @@
 // The sun sits upper right: everything is lit from there.
 import { cyc, P, R } from "../palette";
 import { bayer, hash, noise1, type Strip } from "../strip";
-import { GROUND, type BiomeArt, type CritterSpec, type PaintCtx } from "../types";
+import { GROUND, type BiomeArt, type CritterSpec, type LiveCtx, type PaintCtx } from "../types";
+import { loopX } from "../live";
 
 const LX = 0.7;
 const LY = -0.7;
@@ -387,6 +388,40 @@ export const jungle: BiomeArt = {
         const hgt = 10 + hash(k, x) * 14;
         s.line(gx, 270, gx + d * 3, 270 - hgt, k % 2 ? P.pine : P.pineDeep, 2);
       }
+    }
+  },
+  live(f: Strip, c: LiveCtx) {
+    // Birds crossing the sunset in a loose V.
+    const period = 11;
+    const p = (c.t % period) / period;
+    if (p < 0.55) {
+      const bx = -30 + (p / 0.55) * (c.W + 60);
+      const by = c.oy + 40 + hash(Math.floor(c.t / period), 231) * 50;
+      const flap = Math.floor(c.t * 5) % 2;
+      for (let i = 0; i < 5; i++) {
+        const row = Math.ceil(i / 2);
+        const x = Math.round(bx - row * 6);
+        const y = Math.round(by + (i % 2 ? 1 : -1) * row * 3);
+        f.set(x, y, P.berry), f.set(x - 1, y - flap, P.berry), f.set(x + 1, y - flap, P.berry);
+      }
+    }
+    // Butterflies over the grass.
+    for (let i = 0; i < 4; i++) {
+      const x = Math.round(loopX(c.t * (6 + i * 2) - c.camX + i * 140, c.W, 20) + Math.sin(c.t * 1.7 + i) * 10);
+      const y = Math.round(c.oy + 196 + Math.sin(c.t * 2.3 + i * 1.3) * 10);
+      const open = Math.floor(c.t * 10 + i) % 2;
+      const col = i % 2 ? P.hotPink : P.gold;
+      f.set(x, y, P.ink);
+      f.set(x - 1, y - open, col), f.set(x + 1, y - open, col);
+      if (open) f.set(x - 1, y, col), f.set(x + 1, y, col);
+    }
+    // Leaves drifting down from the canopy.
+    for (let i = 0; i < 6; i++) {
+      const life = (c.t * 0.12 + hash(i, 233)) % 1;
+      const x = Math.round(loopX(hash(i, 234) * 600 - c.camX * 0.85 + Math.sin(c.t * 1.5 + i) * 8, c.W, 10));
+      const y = Math.round(c.oy + 150 + life * 75);
+      f.set(x, y, i % 2 ? P.oliveLight : P.amber);
+      f.set(x + (Math.floor(c.t * 3 + i) % 2), y + 1, i % 2 ? P.olive : P.rust);
     }
   },
   critters: [frog(90), frog(520, true), frog(1100), fireflies(280, 140), fireflies(740, 120), fireflies(960, 156), monkey, cricket, toucan, flower, parrot],

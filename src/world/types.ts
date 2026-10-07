@@ -55,6 +55,9 @@ export type CritterSpec = {
   noOutline?: boolean;
 };
 
+/** What a biome's living scenery gets each frame. Screen coordinates; `oy` is the stage's top row. */
+export type LiveCtx = { t: number; W: number; H: number; oy: number; camX: number; level: number };
+
 export type BiomeArt = {
   /** Paint the sky for a screen of w x h (stage at the bottom STAGE rows). */
   sky(s: Strip, w: number, h: number): void;
@@ -68,6 +71,11 @@ export type BiomeArt = {
   air: number;
   /** Unit vector toward the main light (sun, moon, surface), for rim light. */
   toLight: [number, number];
+  /**
+   * Living scenery: things that move through the biome but are not instruments (birds, cars, fish).
+   * Pure functions of time and camera, drawn behind the creatures.
+   */
+  live?(f: Strip, c: LiveCtx): void;
   /** Particles drifting over this biome: snow, bubbles, fireflies, rain, stardust. */
   weather?: { kind: "snow" | "bubbles" | "fireflies" | "rain" | "dust"; rate: number };
 };

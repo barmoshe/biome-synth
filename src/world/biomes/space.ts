@@ -3,7 +3,8 @@
 // The light comes from a distant sun, upper left.
 import { cyc, P, R } from "../palette";
 import { bayer, hash, noise1, type Strip } from "../strip";
-import { GROUND, type BiomeArt, type CritterSpec, type PaintCtx } from "../types";
+import { GROUND, type BiomeArt, type CritterSpec, type LiveCtx, type PaintCtx } from "../types";
+import { loopX, streak } from "../live";
 
 const LX = -0.75;
 const LY = -0.65;
@@ -302,6 +303,26 @@ export const space: BiomeArt = {
       const cx = x + hash(x, 95) * 180;
       s.ridge(cx - 26, cx + 26, (xx) => 252 + Math.abs(xx - cx) * 0.6 - 8 * noise1(xx * 0.3, 96), P.plum, P.dusk, 2);
     }
+  },
+  live(f: Strip, c: LiveCtx) {
+    // Shooting stars, one every few seconds at a new spot.
+    const period = 3.4;
+    const k = Math.floor(c.t / period);
+    const p = (c.t % period) / period;
+    if (p < 0.3) {
+      const q = p / 0.3;
+      const x = c.W * (0.3 + 0.7 * hash(k, 201)) - q * 120;
+      const y = 8 + hash(k, 202) * (c.oy + 70) + q * 50;
+      streak(f, x, y, -120, 50, 18, [P.white, P.skyLight, P.sky, P.indigo]);
+    }
+    // A lunar rover trundling along the far ridge, its beacon blinking.
+    const rx = loopX(c.t * 7 - c.camX * 0.7, c.W, 40);
+    const ry = c.oy + 200;
+    f.rect(rx, ry, 9, 3, P.mist);
+    f.rect(rx + 1, ry - 2, 4, 2, P.lavGrey);
+    f.set(rx + 1, ry + 3, P.ink), f.set(rx + 4, ry + 3, P.ink), f.set(rx + 7, ry + 3, P.ink);
+    f.line(rx + 6, ry, rx + 7, ry - 4, P.lavGrey);
+    if (Math.sin(c.t * 5) > 0) f.set(rx + 7, ry - 5, P.scarlet);
   },
   critters: [star(70, 50), star(300, 30), star(660, 40), star(1120, 56), moon, pulsar, satellite, beacon, ringed, comet, astronaut],
   weather: { kind: "dust", rate: 0.5 },

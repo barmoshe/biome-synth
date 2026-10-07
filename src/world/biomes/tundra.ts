@@ -3,7 +3,8 @@
 // The light is the aurora, high and to the left.
 import { cyc, P, R } from "../palette";
 import { bayer, hash, noise1, type Strip } from "../strip";
-import { GROUND, type BiomeArt, type CritterSpec, type PaintCtx } from "../types";
+import { GROUND, type BiomeArt, type CritterSpec, type LiveCtx, type PaintCtx } from "../types";
+import { loopX } from "../live";
 
 const LX = -0.5;
 const LY = -0.85;
@@ -250,6 +251,34 @@ export const tundra: BiomeArt = {
       if (hash(x, 65) < 0.02) s.set(x, t + 2, cyc(7, x));
     }
     igloo(s, Math.round(x0 + (x1 - x0) * 0.62));
+  },
+  live(f: Strip, c: LiveCtx) {
+    // A caribou herd crossing the far snowfield.
+    const hx = loopX(-c.t * 5 - c.camX * 0.7, c.W, 80);
+    for (let i = 0; i < 5; i++) {
+      const x = Math.round(hx + i * 13 + Math.sin(i * 2.1) * 3);
+      const y = c.oy + 172 + (i % 2);
+      const step = Math.floor(c.t * 4 + i) % 2;
+      f.rect(x, y, 7, 3, P.dusk);
+      f.rect(x - 2, y - 2, 3, 2, P.dusk);
+      f.set(x - 2, y - 4, P.lavGrey), f.set(x - 1, y - 3, P.lavGrey);
+      f.set(x + step, y + 3, P.dusk), f.set(x + 5 - step, y + 3, P.dusk);
+    }
+    // Geese in a V, now and then.
+    const period = 16;
+    const p = (c.t % period) / period;
+    if (p < 0.5) {
+      const gx = c.W + 20 - p * 2 * (c.W + 80);
+      const gy = c.oy + 60 + hash(Math.floor(c.t / period), 211) * 40;
+      const flap = Math.floor(c.t * 6) % 2;
+      for (let i = 0; i < 7; i++) {
+        const side = i % 2 ? 1 : -1;
+        const row = Math.ceil(i / 2);
+        const x = Math.round(gx + row * 5);
+        const y = Math.round(gy + side * row * 3);
+        f.set(x, y, P.ink), f.set(x - 1, y - flap, P.ink), f.set(x + 1, y - flap, P.ink);
+      }
+    }
   },
   critters: [pillar(70, 40), pillar(88, 28), pillar(360, 46), pillar(730, 34), pillar(1150, 42), penguin(140, false), penguin(158, true), penguin(940, false), walrus, bear, crystal, owl, wisp],
   weather: { kind: "snow", rate: 3 },

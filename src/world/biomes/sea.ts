@@ -3,7 +3,8 @@
 // The light comes down from the surface.
 import { cyc, P, R } from "../palette";
 import { bayer, hash, noise1, type Strip } from "../strip";
-import { GROUND, type BiomeArt, type CritterSpec, type PaintCtx } from "../types";
+import { GROUND, type BiomeArt, type CritterSpec, type LiveCtx, type PaintCtx } from "../types";
+import { loopX } from "../live";
 
 const LX = 0.2;
 const LY = -0.95;
@@ -253,6 +254,30 @@ export const sea: BiomeArt = {
     for (let x = Math.floor(x0); x < x1; x += 320) {
       const cx = x + hash(x, 99) * 150;
       for (let k = 0; k < 5; k++) for (let y = 270; y > 200 + hash(k, x) * 30; y--) s.set(cx + k * 5 + Math.round(Math.sin(y * 0.1 + k) * 3), y, P.pineDeep), s.set(cx + k * 5 + 1 + Math.round(Math.sin(y * 0.1 + k) * 3), y, P.pine);
+    }
+  },
+  live(f: Strip, c: LiveCtx) {
+    // A school of fish wheeling together.
+    const cx = loopX(c.t * 16 - c.camX * 0.8, c.W, 70);
+    const cy = c.oy + 130 + Math.sin(c.t * 0.45) * 22;
+    for (let i = 0; i < 18; i++) {
+      const x = Math.round(cx + (hash(i, 221) - 0.5) * 50 + Math.sin(c.t * 1.3 + i) * 4);
+      const y = Math.round(cy + (hash(i, 222) - 0.5) * 24 + Math.cos(c.t * 1.1 + i * 0.7) * 3);
+      f.set(x, y, P.skyLight), f.set(x + 1, y, P.white), f.set(x - 1, y, P.sky), f.set(x - 2, y + (i % 2 ? -1 : 1), P.sky);
+    }
+    // A manta ray gliding through every so often.
+    const period = 22;
+    const p = (c.t % period) / period;
+    if (p < 0.6) {
+      const mx = -40 + (p / 0.6) * (c.W + 80);
+      const my = c.oy + 70 + Math.sin(c.t * 0.6) * 8;
+      const flap = Math.sin(c.t * 2.2) * 3;
+      for (let i = -14; i <= 14; i++) {
+        const w = Math.max(0, 5 - Math.abs(i) * 0.3);
+        const lift = (Math.abs(i) / 14) * flap;
+        for (let j = -w; j <= w * 0.4; j++) f.set(mx + i * 0.6, my + j - lift, j < -1 ? P.navy : P.indigo);
+      }
+      f.line(mx - 9, my + 1, mx - 20, my + 2, P.navy);
     }
   },
   critters: [whale, jelly(170, 90, R.pink), jelly(660, 64, R.violet), jelly(1120, 100, R.pink), clam, puffer, shrimp, coral(70, R.pink), coral(400, R.orange), angel],
