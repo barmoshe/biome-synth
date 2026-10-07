@@ -1,7 +1,6 @@
 import { Component, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Stage } from "../stage";
 import { BIOMES } from "../shared/biomes";
-import { useBand } from "./band";
 import { canRecord } from "./recorder";
 
 const DRIFT_LABEL = ["Hold", "Drift", "Fly"];
@@ -55,7 +54,6 @@ class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
 function Game({ stage }: { stage: Stage }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const snap = useSyncExternalStore(stage.subscribe, stage.getSnap);
-  const band = useBand(stage);
   const [recOk] = useState(canRecord);
 
   useEffect(() => {
@@ -63,6 +61,11 @@ function Game({ stage }: { stage: Stage }) {
     stage.mount(canvas.current!);
     return () => stage.unmount();
   }, [stage]);
+
+  // Ask the server what the AI band can do the first time the menu opens.
+  useEffect(() => {
+    if (snap.menu) void stage.checkAi();
+  }, [snap.menu, stage]);
 
   const biome = BIOMES[snap.biome];
   const p = snap.prefs;
@@ -124,10 +127,24 @@ function Game({ stage }: { stage: Stage }) {
                 </div>
               </div>
               <div className="row">
-                <span>AI band</span>
-                <button className={`px small ${snap.bandMode !== "local" ? "on" : ""}`} onClick={band.toggle} aria-pressed={snap.bandMode !== "local"}>
-                  {snap.bandMode === "waking" ? "Waking" : snap.bandMode === "claude" ? "On" : "Off"}
-                </button>
+                <span>AI conductor</span>
+                {snap.ai && !snap.ai.claude ? (
+                  <span className="muted">not set up</span>
+                ) : (
+                  <button className={`px small ${snap.bandMode !== "local" ? "on" : ""}`} onClick={() => void stage.toggleClaude()} aria-pressed={snap.bandMode !== "local"}>
+                    {snap.bandMode === "claude" ? "On" : "Off"}
+                  </button>
+                )}
+              </div>
+              <div className="row">
+                <span>AI bed</span>
+                {snap.ai && !snap.ai.lyria ? (
+                  <span className="muted">not set up</span>
+                ) : (
+                  <button className={`px small ${snap.bed !== "off" && snap.bed !== "error" ? "on" : ""}`} onClick={() => void stage.toggleBed()} aria-pressed={snap.bed !== "off" && snap.bed !== "error"}>
+                    {snap.bed === "connecting" ? "Waking" : snap.bed === "buffering" ? "Listening" : snap.bed === "playing" ? "On" : "Off"}
+                  </button>
+                )}
               </div>
               <div className="row">
                 <button className="px small" onClick={() => stage.toggleHelp(true)}>
@@ -161,7 +178,8 @@ function Game({ stage }: { stage: Stage }) {
             </>
           )}
 
-          {(band.note || snap.toast) && <p className="hud note">{band.note ?? snap.toast}</p>}
+          {snap.toast && <p className="hud note">{snap.toast}</p>}
+          {(snap.bed === "playing" || snap.bed === "buffering") && <p className="hud disclosure">AI music by Lyria</p>}
         </>
       )}
 

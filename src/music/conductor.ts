@@ -81,6 +81,8 @@ export class Conductor {
   setComposer(c: Composer | null) {
     this.deps.composer = c;
     if (!c) this.next = null;
+    // Switched on mid-section: ask now, so Claude's first section is the very next one.
+    else if (!this.bridge) this.prepareNext();
   }
 
   private ctx(step: number): StepCtx {

@@ -11,5 +11,5 @@
     "isolatedModules": true,
     "types": ["vite/client"]
   },
-  "include": ["src/world", "src/audio", "src/music", "src/ai", "src/ui", "src/shared", "src/*.ts", "src/*.tsx", "tests"]
+  "include": ["src/world", "src/audio", "src/music", "src/ai", "src/ui", "src/shared", "src/*.ts", "src/*.tsx", "tests/audio.test.ts", "tests/music.test.ts"]
 }

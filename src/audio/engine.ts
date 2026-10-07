@@ -38,6 +38,10 @@ export type Engine = {
   sweepLp(to: number, at: number, dur: number): void;
   /** User volume 0..1. */
   setVolume(v: number): void;
+  /** A player for streamed PCM (the Lyria bed), wired into the bed input. */
+  bedPlayer(): AudioWorkletNode;
+  /** Fade the streamed bed in or out. */
+  setBedLevel(v: number, seconds: number): void;
   fx: WorldFx;
 };
 
@@ -185,6 +189,17 @@ export async function buildGraph(ctx: BaseAudioContext): Promise<Engine> {
     },
     setVolume(v) {
       volume.gain.setTargetAtTime(Math.max(0, Math.min(1, v)), ctx.currentTime, 0.05);
+    },
+    bedPlayer() {
+      const n = new AudioWorkletNode(ctx, "pcm-bed", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+      n.connect(bedIn);
+      return n;
+    },
+    setBedLevel(v, seconds) {
+      const g = bedIn.gain;
+      g.cancelScheduledValues(ctx.currentTime);
+      g.setValueAtTime(g.value, ctx.currentTime);
+      g.linearRampToValueAtTime(v, ctx.currentTime + Math.max(0.01, seconds));
     },
   };
   engine.setFx(DEFAULT_FX, 0, 0);

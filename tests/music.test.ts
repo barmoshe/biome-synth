@@ -191,6 +191,17 @@ describe("conductor", () => {
     expect(slow.section.by).toBe("band");
   });
 
+  it("switching Claude on mid-section asks at once, so its section is the very next one", async () => {
+    const c = new Conductor({ seed: 2, target: () => 4, weightOf: () => 1 }, 4);
+    for (let s = 0; s < 40; s++) c.hits(s, s * 0.11);
+    let asked = 0;
+    c.setComposer(async () => (asked++, { name: "pulse", bars: 4, energy: 0.8 }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(asked).toBe(1);
+    for (let s = 40; s <= 8 * 16; s++) c.hits(s, s * 0.11);
+    expect(c.section.by).toBe("claude");
+  });
+
   it("sky notes use the playing world's own degrees", () => {
     const c = new Conductor({ seed: 1, target: () => 3, weightOf: () => 1 }, 3);
     for (let x = 0; x <= 1; x += 0.05) expect([0, 1, 2, 4, 5]).toContain(((c.skyDeg(x) % 7) + 7) % 7);

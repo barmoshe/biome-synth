@@ -353,6 +353,22 @@ body {
   gap: 4px;
 }
 
+.menu .muted {
+  opacity: 0.6;
+  font-size: 10px;
+}
+.disclosure {
+  right: 16px;
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 4px);
+  margin: 0;
+  padding: 3px 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  background: var(--ink);
+  border: 2px solid var(--mint);
+  color: var(--mint);
+}
+
 /* ---------- the first-run guide ---------- */
 
 .coach {
