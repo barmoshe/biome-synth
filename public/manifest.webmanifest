@@ -1,0 +1,17 @@
+{
+  "name": "Biome Synth",
+  "short_name": "Biome Synth",
+  "description": "A pixel world you play. Every creature is an instrument.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#2e222f",
+  "theme_color": "#2e222f",
+  "categories": ["music", "entertainment", "games"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

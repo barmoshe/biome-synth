@@ -4,14 +4,32 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Biome Synth</title>
-    <meta name="description" content="A pixel world you play. Every creature is an instrument." />
+    <meta name="description" content="A pixel world you play. Tap creatures, slide across the sky, travel through five worlds that each have their own music." />
     <meta name="theme-color" content="#2e222f" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Biome Synth" />
+    <meta property="og:description" content="A pixel world you play. Every creature is an instrument." />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" />
+    <style>
+      /* Before the app loads: the ink background, no white flash. */
+      html, body { margin: 0; height: 100%; background: #2e222f; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <noscript style="color:#fff;font-family:monospace;display:block;padding:24px">Biome Synth needs JavaScript and sound.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
