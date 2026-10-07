@@ -22,7 +22,7 @@ checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biom
 | 6+7 | Claude conductor and Lyria bed through one Worker | 8bb0a71 | 57 tests; Worker checked live with the fixture conductor (status, compose, production build) |
 | 8 | PWA, icons, share image, README, CI | bdda65b | CI green |
 | 8 | Tile-mapped layer drawing | 544c162 | Frame cost about 12 ms to 1.2-3.9 ms headless |
-| 9 | On-device composer replaces Claude and Lyria: listens, learns, answers, develops the player's theme, chord walks, form that follows the player | (this commit) | 67 tests; played live: a 5-note phrase was answered, became the theme in Orbit, and carried into Neon; no console errors |
+| 9 | On-device composer replaces Claude and Lyria: listens, learns, answers, develops the player's theme, chord walks, form that follows the player | 675f56f | 67 tests; played live: a 5-note phrase was answered, became the theme in Orbit, and carried into Neon; no console errors |
 
 ## Next (needs Bar)
 
