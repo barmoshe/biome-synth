@@ -12,6 +12,7 @@ export function App() {
   const band = useBand(stage);
 
   useEffect(() => {
+    if (import.meta.env.DEV) (window as unknown as { __stage: Stage }).__stage = stage; // play-testing only
     stage.mount(canvas.current!);
     return () => stage.unmount();
   }, [stage]);

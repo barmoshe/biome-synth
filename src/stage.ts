@@ -65,8 +65,8 @@ export class Stage {
 
   constructor() {
     const seed = (Math.random() * 1e9) | 0;
-    // Start in the jungle, the friendliest place to land.
-    this.world.camX = 3 * BW + BW / 2 - 200;
+    // The journey starts in Orbit, the first biome.
+    this.world.camX = BW / 2 - 250;
     this.conductor = new Conductor({
       seed,
       dominant: () => BIOMES[this.world.dominant()].id,
