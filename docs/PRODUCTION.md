@@ -59,5 +59,5 @@ Bar, 2026-10-07: smart procedural generative music instead of depending on Claud
 - [x] CI on GitHub: typecheck, tests, build (green)
 - [x] Production build: 107 KB gzipped JS + 15 KB worklet
 - [x] Deploy: static site on Vercel, https://biome-synth.vercel.app (played there, no console errors)
-- [ ] A bar-builds.com subdomain (Bar: Vercel domain plus a GoDaddy CNAME)
+- [x] https://synth.bar-builds.com (Vercel domain, GoDaddy CNAME synth → cname.vercel-dns.com, Let's Encrypt certificate)
 - [ ] A license (Bar's call)

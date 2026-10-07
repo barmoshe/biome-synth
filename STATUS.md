@@ -28,8 +28,7 @@ checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biom
 ## Next (needs Bar)
 
 - Listen to Canopy's "Parrot Talk" (renders/canopy-preview-30s.wav, or live in Canopy) and react before the other four songs are written (docs/research/sound-redesign.md).
-- Live at https://biome-synth.vercel.app (Vercel, 2026-10-07). For a subdomain: add it to the Vercel
-  project and a CNAME at GoDaddy (the agent's domain change was blocked).
+- Live at https://synth.bar-builds.com (and https://biome-synth.vercel.app).
 - A license.
 
 ## Deviations from the plan
