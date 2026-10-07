@@ -27,7 +27,8 @@ checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biom
 ## Next (needs Bar)
 
 - Play it and react to the composer (answers, themes).
-- The deploy target: now a static site, so a bar-builds.com subdomain on Vercel works with the DNS as it is.
+- Live at https://biome-synth.vercel.app (Vercel, 2026-10-07). For a subdomain: add it to the Vercel
+  project and a CNAME at GoDaddy (the agent's domain change was blocked).
 - A license.
 
 ## Deviations from the plan
