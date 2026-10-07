@@ -73,6 +73,7 @@ export class World {
 
   constructor() {
     this.layers = LAYER_F.map((f, i) => this.paintLayer(f, i));
+    this.tileLayers();
     this.critters = this.art.flatMap((a, biome) =>
       a.critters.map((c, i) => ({ ...c, biome, wx: biome * BW + Math.round((c.x * BW) / AUTHOR_W), act: 0, pre: 0, hover: false, flip: hash(i, biome) < 0.3 })),
     );
@@ -395,24 +396,61 @@ export class World {
 
   // ---------- rendering ----------
 
+  /**
+   * Per layer, per row, per 32-pixel tile: 0 all transparent, 1 all opaque, 2 mixed. Most of a
+   * layer is one or the other, so drawing skips or block-copies it and only mixed tiles go pixel
+   * by pixel.
+   */
+  private tiles: Uint8Array[] = [];
+  private tileLayers() {
+    this.tiles = this.layers.map((L) => {
+      const nt = Math.ceil(L.w / 32);
+      const t = new Uint8Array(STAGE * nt);
+      for (let y = 0; y < STAGE; y++)
+        for (let k = 0; k < nt; k++) {
+          let opaque = 0;
+          const x0 = k * 32;
+          const x1 = Math.min(L.w, x0 + 32);
+          for (let x = x0; x < x1; x++) if (L.px[y * L.w + x] !== T) opaque++;
+          t[y * nt + k] = opaque === 0 ? 0 : opaque === x1 - x0 ? 1 : 2;
+        }
+      return t;
+    });
+  }
+
   private drawLayer(li: number) {
     const { W, fb } = this;
     const px = fb.px;
     const oy = this.oy;
     const L = this.layers[li];
+    const lpx = L.px;
     const lw = L.w;
+    const nt = Math.ceil(lw / 32);
+    const tiles = this.tiles[li];
     // Every layer is centred on the same world point, so the biome behind matches the one in front.
     const lx = Math.floor(this.centerX * LAYER_F[li] - W / 2);
+    const start = ((lx % lw) + lw) % lw;
     for (let y = 0; y < STAGE; y++) {
       const sy = y + oy;
-      if (sy < 0) continue;
+      if (sy < 0 || sy >= this.H) continue;
       const src = y * lw;
       const dst = sy * W;
-      let xx = ((lx % lw) + lw) % lw;
-      for (let x = 0; x < W; x++) {
-        const c = L.px[src + xx];
-        if (c !== T) px[dst + x] = c;
-        if (++xx === lw) xx = 0;
+      const trow = y * nt;
+      let x = 0;
+      let xx = start;
+      while (x < W) {
+        const k = xx >> 5;
+        const run = Math.min(Math.min((k + 1) * 32, lw) - xx, W - x);
+        const state = tiles[trow + k];
+        if (state === 1) px.set(lpx.subarray(src + xx, src + xx + run), dst + x);
+        else if (state === 2)
+          for (let i = 0; i < run; i++) {
+            const c = lpx[src + xx + i];
+            if (c !== T) px[dst + x + i] = c;
+          }
+        x += run;
+        xx += run;
+        if (xx >= lw) xx -= lw;
       }
     }
   }
