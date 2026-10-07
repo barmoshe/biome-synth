@@ -32,6 +32,9 @@ export function App() {
           <header className="hud top">
             <div className="where">
               <h1>{biome.name}</h1>
+              <p className="genre">
+                {snap.bridging ? "crossing over" : `${snap.genre} · ${snap.bpm} bpm`}
+              </p>
               <p>
                 {snap.section}
                 <span className={snap.sectionBy === "claude" ? "by claude" : "by"}>{snap.sectionBy === "claude" ? "claude" : "band"}</span>

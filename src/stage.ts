@@ -2,10 +2,10 @@
 // small snapshot through subscribe().
 import { Clock } from "./audio/clock";
 import { getEngine, readLevels, type Engine } from "./audio/engine";
-import { nextId, route } from "./audio/router";
+import type { NoteEvent } from "./audio/dsp/core";
 import { Conductor, type Composer } from "./music/conductor";
-import type { Hit } from "./music/band";
 import type { Section } from "./music/pattern";
+import type { Out } from "./music/world";
 import { BIOMES, ROLES, type Role } from "./shared/biomes";
 import { P } from "./world/palette";
 import { BW, STAGE, WORLD } from "./world/types";
@@ -17,6 +17,10 @@ export type Snapshot = {
   weights: number[];
   section: Section["name"];
   sectionBy: "band" | "claude";
+  /** The world the band is playing (it lags the camera by a bridge). */
+  genre: string;
+  bpm: number;
+  bridging: boolean;
   bars: number;
   drift: 0 | 1 | 2;
   /** Fraction of the loop, 0..1, for the map strip. */
@@ -28,6 +32,9 @@ export type Snapshot = {
 const DRIFT = [0, 9, 26];
 /** Note colours by scale degree: the ribbon and the bursts share them. */
 const NOTE_C = [P.goldGlow, P.mint, P.skyLight, P.pink, P.lime, P.lilac, P.peach];
+
+let held = 1;
+const nextId = () => ++held;
 
 type Pointer = {
   critter: Critter | null;
@@ -54,7 +61,7 @@ export class Stage {
   private scale = 1;
   private raf = 0;
   private last = 0;
-  private visQueue: { time: number; role: Role; from: Hit["from"]; vel: number; who?: Critter | null }[] = [];
+  private visQueue: { time: number; role: Role; from: Out["from"]; vel: number; who?: Critter | null }[] = [];
   private levels = { rms: 0, low: 0, mid: 0, high: 0 };
   private travel: { from: number; to: number; t: number } | null = null;
   private keysHeld = new Set<string>();
@@ -69,14 +76,17 @@ export class Stage {
     this.world.camX = BW / 2 - 250;
     this.conductor = new Conductor({
       seed,
-      dominant: () => BIOMES[this.world.dominant()].id,
-      blend: () =>
-        this.world
-          .weights()
-          .map((w, i) => ({ biome: BIOMES[i].id, weight: Math.round(w * 100) / 100 }))
-          .filter((b) => b.weight > 0)
-          .sort((a, b) => b.weight - a.weight),
+      target: () => this.world.dominant(),
+      weightOf: (i) => this.world.weights()[i],
+      fx: (fx, at, ramp) => this.engine?.setFx(fx, at, ramp),
+      sweep: (to, at, dur) => this.engine?.sweepLp(to, at, dur),
+      tapeStop: (at, seconds) => this.engine?.post({ type: "tapestop", frame: Math.round(at * this.engine.ctx.sampleRate), seconds }),
       onSection: () => this.emit(),
+      onWorld: () => this.emit(),
+      daylight: () => {
+        const h = new Date().getHours() + new Date().getMinutes() / 60;
+        return 0.5 - 0.5 * Math.cos(((h - 2) / 24) * Math.PI * 2);
+      },
     });
     this.snap = this.makeSnap(false);
   }
@@ -97,6 +107,9 @@ export class Stage {
       weights: w,
       section: c.name,
       sectionBy: c.by ?? "band",
+      genre: this.conductor.world.genre,
+      bpm: this.conductor.world.bpm,
+      bridging: this.conductor.transitioning,
       bars: c.bars,
       drift: this.snap?.drift ?? 1,
       pos: (((this.world.centerX % WORLD) + WORLD) % WORLD) / WORLD,
@@ -178,13 +191,14 @@ export class Stage {
     const e = await getEngine();
     this.engine = e;
     const ctx = e.ctx;
-    const clock = new Clock({ now: () => ctx.currentTime, every: (ms, fn) => { const id = setInterval(fn, ms); return () => clearInterval(id); } }, this.bpmNow());
-    clock.onStep((step, time, sec) => this.onStep(step, time, sec));
+    const clock = new Clock({ now: () => ctx.currentTime, every: (ms, fn) => { const id = setInterval(fn, ms); return () => clearInterval(id); } }, this.conductor.stepSec);
+    clock.onStep((step, time) => this.onStep(step, time));
     this.clock = clock;
+    const now = ctx.currentTime + 0.05;
+    e.setFx(this.conductor.world.fx, now, 0);
     this.postBed();
     // A three-note hello so you know sound works, then the band.
-    const now = ctx.currentTime + 0.05;
-    [0, 2, 4].forEach((d, i) => this.sound({ role: "arp", deg: d + 7, vel: 0.7, len: 3, from: "player" }, now + i * 0.11, 0.12));
+    [0, 0.5, 1].forEach((x, i) => this.play(this.conductor.sky(0, x, { bright: 0.6, speed: 0, pan: x - 0.5 }), now + i * 0.12, true));
     clock.start(now + 0.5);
     this.emit({ started: true });
   }
@@ -194,26 +208,34 @@ export class Stage {
     this.emit({ bandMode: mode });
   }
 
-  private bpmNow() {
-    const w = this.world.weights();
-    return w.reduce((s, wi, i) => s + wi * BIOMES[i].bpm, 0);
+  private onStep(step: number, time: number) {
+    const c = this.conductor;
+    const outs = c.hits(step, time);
+    // The clock follows the world: a glide during a bridge, exact from the new world's downbeat.
+    this.clock!.setStepSec(c.pendingStepSec ?? c.stepSec, c.entered);
+    c.entered = false;
+    this.play(outs, time);
   }
 
-  private onStep(step: number, time: number, sec: number) {
-    this.clock!.setTempo(this.bpmNow());
-    for (const h of this.conductor.hits(step)) this.sound(h, time, sec);
-  }
-
-  private sound(h: Hit, time: number, sec: number, extra: { bright?: number; pan?: number; id?: number } = {}) {
+  /** Send outs to the worklet at `time` (plus each one's offset) and queue their creatures. */
+  private play(outs: Out[], time: number, quiet = false) {
     const e = this.engine;
-    if (!e) return;
-    const evs = route(h, { weights: this.world.weights(), time, stepSec: sec, sampleRate: e.ctx.sampleRate, energy: this.conductor.section.energy, ...extra });
-    if (evs.length) e.post({ type: "notes", evs });
-    this.visQueue.push({ time, role: h.role, from: h.from, vel: h.vel });
+    if (!e || !outs.length) return;
+    const sr = e.ctx.sampleRate;
+    const evs: NoteEvent[] = [];
+    for (const o of outs) {
+      const t = time + (o.offset ?? 0);
+      evs.push({ frame: Math.round(t * sr), note: o.note, send: o.send, delay: o.delay, ducks: o.ducks, id: o.id });
+      if (o.throw) e.throwDelay(t, o.throw);
+      if (!o.silent && !quiet) this.visQueue.push({ time: t, role: o.role, from: o.from, vel: o.note.vel });
+    }
+    e.post({ type: "notes", evs });
+    // Keep the creature queue in time order: player notes jump ahead of scheduled band notes.
+    this.visQueue.sort((a, b) => a.time - b.time);
   }
 
   private postBed() {
-    this.engine?.post({ type: "bed", weights: this.world.weights(), level: 0.55 });
+    this.engine?.post({ type: "bed", weights: this.world.weights(), level: 0.5 });
   }
 
   /** The step that is sounding now. */
@@ -265,7 +287,10 @@ export class Stage {
         const v = this.visQueue.shift()!;
         if (v.from !== "player") w.play(v.role, v.from, v.vel, v.who ?? undefined);
       }
-      if (this.clock) beat = ((this.audibleStep() % 4) + 4) % 4 / 4;
+      if (this.clock) {
+        const spb = this.conductor.world.stepsPerBeat;
+        beat = ((this.audibleStep() % spb) + spb) % spb / spb;
+      }
       this.bedTimer -= dt;
       if (this.bedTimer <= 0) {
         this.bedTimer = 0.2;
@@ -359,18 +384,22 @@ export class Stage {
 
   private fling(info: Pointer, speed: number) {
     const e = this.engine!;
-    const sec = 60 / (this.clock?.bpm ?? 100) / 4;
+    const c = this.conductor;
+    const sec = c.stepSec;
     const n = Math.max(4, Math.min(8, Math.round(speed / 140)));
     const dir = info.vy < -Math.abs(info.vx) * 0.3 ? 1 : info.vy > Math.abs(info.vx) * 0.3 ? -1 : info.vx >= 0 ? 1 : -1;
-    const start = info.lastDeg ?? this.skyDeg(info.x);
+    const x0 = info.x / this.world.W;
     const t0 = e.ctx.currentTime + 0.02;
-    const degs: number[] = [];
+    const step = this.audibleStep();
+    const colors: number[] = [];
+    // The cascade walks the world's own sky notes, one per step, in its own voice.
     for (let i = 0; i < n; i++) {
-      const deg = start + dir * (i + 1) * (i % 2 ? 1 : 2) - (i % 2 ? 0 : dir);
-      degs.push(deg);
-      this.sound({ role: i === n - 1 ? "lead" : "arp", deg, vel: 0.75 - i * 0.05, len: i === n - 1 ? 6 : 2, from: "echo" }, t0 + i * sec, sec, { bright: 0.8 });
+      const x = Math.max(0, Math.min(1, x0 + dir * (i + 1) * 0.055));
+      const outs = c.sky(step + i, x, { bright: 0.85, speed: 400, pan: x - 0.5 }).map((o) => ({ ...o, from: "echo" as const }));
+      this.play(outs, t0 + i * sec, true);
+      colors.push(NOTE_C[c.skyDeg(x) % NOTE_C.length]);
     }
-    this.world.fling(info.x, info.y, info.vx, info.vy, degs.map((d) => NOTE_C[((d % NOTE_C.length) + NOTE_C.length) % NOTE_C.length]), sec);
+    this.world.fling(info.x, info.y, info.vx, info.vy, colors, sec);
     navigator.vibrate?.([6, 30, 6]);
   }
 
@@ -431,32 +460,26 @@ export class Stage {
   private playRole(role: Role, c: Critter | null, id?: number, vel = 1) {
     const e = this.engine;
     if (!e) return;
-    const step = this.audibleStep();
-    const now = e.ctx.currentTime + 0.01;
-    const sec = 60 / (this.clock?.bpm ?? 100) / 4;
-    for (const h of this.conductor.playerRole(step, role)) this.sound({ ...h, vel: h.vel * vel }, now, sec, { id });
+    const outs = this.conductor.tap(this.audibleStep(), role).map((o) => ({ ...o, id, note: { ...o.note, vel: o.note.vel * vel } }));
+    this.play(outs, e.ctx.currentTime + 0.01, true);
     this.world.play(role, "player", vel, c ?? undefined);
   }
 
   private skyDeg(x: number) {
-    // Two octaves across the screen, in degrees of whatever scale is under the camera.
-    return Math.round((x / this.world.W) * 12) + 3;
+    return this.conductor.skyDeg(x / this.world.W);
   }
 
   /** A lead note from open sky. `speed` in art px/s: fast slides play short and bright, slow ones sing. */
   private skyNote(x: number, y: number, speed: number): number {
     const e = this.engine;
     if (!e) return 0;
-    const deg = this.skyDeg(x);
     const height = Math.max(0, Math.min(1, 1 - y / this.world.H));
     const fast = Math.min(1, speed / 500);
     const bright = Math.min(1, height * 0.8 + fast * 0.4);
-    const step = this.audibleStep();
-    this.conductor.playerLead(step, deg, fast < 0.4);
-    const sec = 60 / (this.clock?.bpm ?? 100) / 4;
-    const len = fast > 0.6 ? 1 : fast > 0.25 ? 2 : 4;
-    this.sound({ role: "lead", deg, vel: 0.5 + 0.35 * height + 0.15 * fast, len, from: "player" }, e.ctx.currentTime + 0.01, sec, { bright, pan: (x / this.world.W) * 1.2 - 0.6 });
-    this.world.burst(x, y, NOTE_C[deg % NOTE_C.length], 1 - fast * 0.6);
+    const outs = this.conductor.sky(this.audibleStep(), x / this.world.W, { bright, speed, pan: (x / this.world.W) * 1.2 - 0.6 });
+    this.play(outs, e.ctx.currentTime + 0.01, true);
+    const deg = this.skyDeg(x);
+    this.world.burst(x, y, NOTE_C[((deg % NOTE_C.length) + NOTE_C.length) % NOTE_C.length], 1 - fast * 0.6);
     return deg;
   }
 }

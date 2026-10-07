@@ -96,8 +96,10 @@ export class Bed {
         const rain = white - this.lps[6].run(white, 0.2);
         this.ph[3] = (this.ph[3] + 50 / sr) % 1;
         const hum = Math.sin(this.ph[3] * TAU) * 0.15 + Math.sin(this.ph[3] * TAU * 3) * 0.05;
-        L += (rain * 0.18 + hum) * w[4];
-        R += (rain * 0.18 + hum * 0.8) * w[4];
+        // Vinyl crackle, Burial-style.
+        const crackle = r.next() < 18 / sr ? (r.next() - 0.5) * 0.5 : 0;
+        L += (rain * 0.18 + hum + crackle) * w[4];
+        R += (rain * 0.18 + hum * 0.8 + crackle * 0.7) * w[4];
       }
 
       for (let b = this.blips.length - 1; b >= 0; b--) {

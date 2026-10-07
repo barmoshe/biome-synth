@@ -1,5 +1,5 @@
-// The one AudioWorklet: synth core + procedural bed. Output 0 is dry stereo, output 1 is the
-// reverb send. Messages carry absolute frames, so timing never depends on the main thread.
+// The one AudioWorklet: synth core + procedural bed. Output 0 is dry stereo, output 1 the reverb
+// send, output 2 the dub delay send. Messages carry absolute frames, so timing never depends on the main thread.
 import { Core, type CoreMsg } from "./dsp/core";
 import { Bed } from "./dsp/bed";
 
@@ -27,12 +27,12 @@ class BiomeCore extends AudioWorkletProcessor {
     };
   }
   process(_in: Float32Array[][], outputs: Float32Array[][]) {
-    const [dry, send] = outputs;
+    const [dry, send, del] = outputs;
     if (!dry?.[0]) return true;
     const dryR = dry[1] ?? dry[0];
     const sendL = send?.[0] ?? new Float32Array(dry[0].length);
     const sendR = send?.[1] ?? sendL;
-    this.core.process(currentFrame, dry[0], dryR, sendL, sendR);
+    this.core.process(currentFrame, dry[0], dryR, sendL, sendR, del?.[0], del?.[1] ?? del?.[0]);
     this.bed.render(dry[0], dryR);
     // A heartbeat for the UI and the tests: voice count and peak, about 6 times a second.
     if (++this.ticks % 64 === 0) this.port.postMessage({ type: "stats", voices: this.core.voices, peak: this.core.peak });
