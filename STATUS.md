@@ -26,10 +26,6 @@ checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biom
 
 ## Next (needs Bar)
 
-- Delete the retired AI files (the agent's delete was blocked): `src/ai/`, `src/worker/`,
-  `tests/worker.test.ts`, `tsconfig.worker.json`, the `pcm-bed` processor in `src/audio/worklet.ts`
-  with `bedPlayer`/`bedIn`/`setBedLevel` in `src/audio/engine.ts`, the `@anthropic-ai/sdk`, `hono` and
-  `@cloudflare/workers-types` packages, and `main`/`vars`/`ratelimits` in `wrangler.jsonc`.
 - Play it and react to the composer (answers, themes).
 - The deploy target: now a static site, so a bar-builds.com subdomain on Vercel works with the DNS as it is.
 - A license.

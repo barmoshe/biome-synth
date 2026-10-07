@@ -42,7 +42,7 @@ Bar, 2026-10-07: smart procedural generative music instead of depending on Claud
 - [x] Chord walks on each genre's graph, ending on a chord that leads home (tested)
 - [x] Form follows the player: busy reaches the surge, idle never does, the night holds energy down (tested)
 - [x] The band's lead steps back while the player plays (tested)
-- [ ] Bar deletes the retired AI files (`src/ai`, `src/worker`, `tests/worker.test.ts`, `tsconfig.worker.json`) and the streamed-bed player; the agent's delete was blocked
+- [x] The retired AI code is gone: the files, the streamed-bed player, the SDK, Hono and the Worker config
 
 ## Engineering
 

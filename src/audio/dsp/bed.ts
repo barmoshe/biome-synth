@@ -27,7 +27,7 @@ class Lp {
 
 export class Bed {
   weights = [0, 0, 0, 0, 0];
-  /** Overall bed level, 0..1; ducked while the Lyria bed plays. */
+  /** Overall bed level, 0..1. */
   level = 0.5;
   private target = [0, 0, 0, 0, 0];
   private rng = new Rng();

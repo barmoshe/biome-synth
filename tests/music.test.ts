@@ -50,7 +50,6 @@ describe("clampSection (any input becomes something playable)", () => {
     ["wrong types", { name: 7, bars: "lots", energy: "high", chords: "I-IV-V", layers: 3, motif: [] }],
     ["out of range", { name: "surge", bars: 400, energy: 9, chords: [99, -99, 2.6], layers: { drums: 7, bass: -2 } }],
     ["broken motif", { motif: "0:4:0 nonsense 999:2:1 4:0:2 8:2:99" }],
-    ["lyria junk", { lyria: { prompts: [{ text: "" }, { text: "rain", weight: 99 }, 5], density: -1 } }],
   ];
   for (const [label, raw] of golden)
     it(label, () => {

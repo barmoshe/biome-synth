@@ -1,21 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // A static site: Cloudflare can serve it as assets only (npm run deploy:cf). Production is on Vercel.
   "name": "biome-synth",
-  "main": "src/worker/index.ts",
   "compatibility_date": "2026-10-07",
-  "compatibility_flags": ["nodejs_compat"],
-  "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
-  },
-  // "0" turns the AI band off everywhere without a deploy: wrangler secret/vars, or the dashboard.
-  "vars": { "AI_ENABLED": "1" },
-  // Per-IP limits: a section is asked for about once a minute, a Lyria session once in a while.
-  "ratelimits": [
-    { "name": "COMPOSE_LIMIT", "namespace_id": "4101", "simple": { "limit": 12, "period": 60 } },
-    { "name": "LYRIA_LIMIT", "namespace_id": "4102", "simple": { "limit": 3, "period": 60 } }
-  ],
-  "observability": { "enabled": true }
+  "assets": { "directory": "./dist", "not_found_handling": "single-page-application" }
 }

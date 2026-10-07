@@ -67,7 +67,7 @@ export function orbit(): WorldMusic {
     },
     write(name, rng) {
       const s = baseSection(name, w);
-      // A motif the comet can sing when Claude is not writing one.
+      // A motif for the comet; the composer replaces it with the band's theme.
       const notes = [0, 3, 6, 10, 14].filter(() => rng() < 0.7).map((step, i) => ({ step, len: 3, deg: [4, 7, 9, 11, 14][(i + Math.floor(rng() * 5)) % 5] }));
       s.motif = formatLine(notes);
       return s;

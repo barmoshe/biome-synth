@@ -23,8 +23,6 @@ export type Section = {
   motif: string;
   /** Optional chord roots as scale degrees, one per bar, cycling. Empty = the world's own plan. */
   chords: number[];
-  /** Steering for the Lyria bed, ignored when it is off. */
-  lyria?: { prompts: { text: string; weight: number }[]; density: number; brightness: number };
   /** Whose theme it develops: the band's own, or the player's. Shown in the HUD. */
   by?: "band" | "you";
 };
@@ -72,12 +70,5 @@ export function clampSection(raw: unknown, fallbackName: SectionName = "bloom", 
     chords,
     by: r.by === "you" ? "you" : "band",
   };
-  if (r.lyria && typeof r.lyria === "object" && Array.isArray(r.lyria.prompts)) {
-    const prompts = r.lyria.prompts
-      .filter((p: any) => p && typeof p.text === "string" && p.text.trim())
-      .slice(0, 4)
-      .map((p: any) => ({ text: String(p.text).slice(0, 160), weight: clamp(p.weight, 0.05, 2, 1) }));
-    if (prompts.length) out.lyria = { prompts, density: clamp(r.lyria.density, 0, 1, 0.5), brightness: clamp(r.lyria.brightness, 0, 1, 0.5) };
-  }
   return out;
 }

@@ -10,7 +10,7 @@ export type Biome = {
   id: BiomeId;
   name: string;
   mood: string;
-  /** One line for Lyria and Claude. */
+  /** One line describing the world's sound. */
   prompt: string;
 };
 

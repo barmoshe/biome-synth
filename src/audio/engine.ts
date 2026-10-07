@@ -1,7 +1,6 @@
 // One AudioContext for the page, created inside the first gesture (iOS refuses sound otherwise).
-// Graph: worklet dry ─┐
-//        worklet send → reverb ─┼→ master → soft clip → limiter → analyser → speakers
-//        lyria bed (later) ─────┘
+// Graph: worklet dry ──────────┐
+//        worklet send → reverb ─┴→ master → soft clip → limiter → analyser → speakers
 // Adapted from riff-link's engine (../riff-link/src/audio/engine.ts).
 import workletUrl from "./worklet.ts?worker&url";
 import type { WorkletMsg } from "./worklet";
@@ -25,8 +24,6 @@ export type Engine = {
   ctx: BaseAudioContext;
   node: AudioWorkletNode;
   master: GainNode;
-  /** Where external audio (the Lyria bed) joins the mix. */
-  bedIn: GainNode;
   analyser: AnalyserNode;
   post(msg: WorkletMsg, transfer?: Transferable[]): void;
   stats: { voices: number; peak: number };
@@ -38,10 +35,6 @@ export type Engine = {
   sweepLp(to: number, at: number, dur: number): void;
   /** User volume 0..1. */
   setVolume(v: number): void;
-  /** A player for streamed PCM (the Lyria bed), wired into the bed input. */
-  bedPlayer(): AudioWorkletNode;
-  /** Fade the streamed bed in or out. */
-  setBedLevel(v: number, seconds: number): void;
   fx: WorldFx;
 };
 
@@ -104,9 +97,6 @@ export async function buildGraph(ctx: BaseAudioContext): Promise<Engine> {
   delayWet.connect(master);
   delayWet.connect(sendIn); // echoes bloom into the reverb
 
-  const bedIn = ctx.createGain();
-  bedIn.gain.value = 0;
-
   const masterLp = ctx.createBiquadFilter();
   masterLp.type = "lowpass";
   masterLp.Q.value = 0.9;
@@ -134,7 +124,6 @@ export async function buildGraph(ctx: BaseAudioContext): Promise<Engine> {
   node.connect(master, 0);
   node.connect(sendIn, 1);
   node.connect(delayIn, 2);
-  bedIn.connect(master);
   master.connect(masterLp).connect(shaper).connect(limiter).connect(volume).connect(analyser).connect(ctx.destination);
 
   const stats = { voices: 0, peak: 0 };
@@ -154,7 +143,6 @@ export async function buildGraph(ctx: BaseAudioContext): Promise<Engine> {
     ctx,
     node,
     master,
-    bedIn,
     analyser,
     stats,
     post,
@@ -189,17 +177,6 @@ export async function buildGraph(ctx: BaseAudioContext): Promise<Engine> {
     },
     setVolume(v) {
       volume.gain.setTargetAtTime(Math.max(0, Math.min(1, v)), ctx.currentTime, 0.05);
-    },
-    bedPlayer() {
-      const n = new AudioWorkletNode(ctx, "pcm-bed", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
-      n.connect(bedIn);
-      return n;
-    },
-    setBedLevel(v, seconds) {
-      const g = bedIn.gain;
-      g.cancelScheduledValues(ctx.currentTime);
-      g.setValueAtTime(g.value, ctx.currentTime);
-      g.linearRampToValueAtTime(v, ctx.currentTime + Math.max(0.01, seconds));
     },
   };
   engine.setFx(DEFAULT_FX, 0, 0);
