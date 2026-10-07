@@ -23,7 +23,7 @@ checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biom
 | 8 | PWA, icons, share image, README, CI | bdda65b | CI green |
 | 8 | Tile-mapped layer drawing | 544c162 | Frame cost about 12 ms to 1.2-3.9 ms headless |
 | 9 | On-device composer replaces Claude and Lyria: listens, learns, answers, develops the player's theme, chord walks, form that follows the player | 675f56f | 67 tests; played live: a 5-note phrase was answered, became the theme in Orbit, and carried into Neon; no console errors |
-| 10 | Sound redesign, first slice: CC0 sample pipeline (VCSL, VSCO 2), sampler voice, the whole mix in the worklet (buses, FDN room and hall, dub delay, glue, look-ahead limiter), written songs, Canopy's "Parrot Talk" | (this commit) | 72 tests; Canopy render -15.9 LUFS, true peak -1.25 dBTP, DC 0 (was 0.1), air +5 (was up to +19), verse -15.8 / chorus -14.7 / rain -17.6 LU; played live, no errors; 1.3 MB of samples |
+| 10 | Sound redesign, first slice: CC0 sample pipeline (VCSL, VSCO 2), sampler voice, the whole mix in the worklet (buses, FDN room and hall, dub delay, glue, look-ahead limiter), written songs, Canopy's "Parrot Talk" | 8f3ef5e | 72 tests; Canopy render -15.9 LUFS, true peak -1.25 dBTP, DC 0 (was 0.1), air +5 (was up to +19), verse -15.8 / chorus -14.7 / rain -17.6 LU; played live, no errors; 1.3 MB of samples |
 
 ## Next (needs Bar)
 
