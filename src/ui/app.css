@@ -1,0 +1,265 @@
+/* Resurrect 64 tokens for the HUD. The world is the art; the HUD stays small and square. */
+:root {
+  --ink: #2e222f;
+  --plum: #3e3546;
+  --dusk: #625565;
+  --pale: #c7dcd0;
+  --white: #ffffff;
+  --gold: #f9c22b;
+  --glow: #fbff86;
+  --mint: #30e1b9;
+  --pink: #f04f78;
+  --u: 4px; /* one HUD pixel */
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--ink);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body {
+  font-family: "Silkscreen", ui-monospace, monospace;
+  color: var(--white);
+  -webkit-font-smoothing: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+}
+.world {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  image-rendering: pixelated;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* Pixel panels: square corners, a stepped shadow, no blur. */
+.px,
+.chip {
+  font: inherit;
+  color: var(--white);
+  background: var(--ink);
+  border: var(--u) solid var(--pale);
+  box-shadow: var(--u) var(--u) 0 var(--ink);
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.px:active,
+.chip:active {
+  transform: translate(var(--u), var(--u));
+  box-shadow: none;
+}
+.px:focus-visible,
+.chip:focus-visible {
+  outline: var(--u) solid var(--glow);
+  outline-offset: 2px;
+}
+.px.on {
+  background: var(--gold);
+  color: var(--ink);
+  border-color: var(--glow);
+}
+
+.hud {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+.hud > *,
+.hud button {
+  pointer-events: auto;
+}
+
+.top {
+  top: max(12px, env(safe-area-inset-top));
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.where h1 {
+  margin: 0;
+  font-size: clamp(22px, 4vw, 40px);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-shadow: var(--u) var(--u) 0 var(--ink);
+}
+.where p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  text-shadow: 2px 2px 0 var(--ink);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.by {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--plum);
+}
+.by.claude {
+  background: var(--mint);
+  color: var(--ink);
+}
+.buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.map {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 6px;
+  padding-bottom: 10px;
+}
+.chip {
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.chip.here {
+  border-color: var(--glow);
+  color: var(--glow);
+}
+.marker {
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 6px;
+  background: var(--glow);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.note {
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--ink);
+  border: var(--u) solid var(--pink);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.title {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: var(--white);
+  cursor: pointer;
+}
+.logo {
+  font-size: clamp(34px, 8vw, 84px);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--glow);
+  text-shadow:
+    var(--u) var(--u) 0 var(--ink),
+    calc(var(--u) * 2) calc(var(--u) * 2) 0 var(--pink);
+}
+.tap {
+  font-size: 18px;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  background: var(--ink);
+  border: var(--u) solid var(--pale);
+  animation: blink 1.2s steps(2) infinite;
+}
+.hint {
+  font-size: 11px;
+  text-transform: uppercase;
+  opacity: 0.8;
+  text-shadow: 2px 2px 0 var(--ink);
+}
+@keyframes blink {
+  50% {
+    border-color: var(--glow);
+  }
+}
+
+.help {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  background: rgb(46 34 47 / 0.6);
+}
+.panel {
+  background: var(--ink);
+  border: var(--u) solid var(--pale);
+  box-shadow: calc(var(--u) * 2) calc(var(--u) * 2) 0 var(--plum);
+  padding: 20px 24px;
+  max-width: min(520px, calc(100vw - 32px));
+}
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  text-transform: uppercase;
+  color: var(--glow);
+}
+.panel ul {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  font-family: ui-monospace, monospace;
+}
+
+@media (max-width: 560px) {
+  .chip {
+    font-size: 9px;
+    padding: 4px 5px;
+  }
+  .px {
+    font-size: 11px;
+    padding: 5px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tap {
+    animation: none;
+  }
+}
