@@ -1,7 +1,6 @@
-// The one AudioWorklet: synth core + procedural bed. Output 0 is dry stereo, output 1 the reverb
-// send, output 2 the dub delay send. Messages carry absolute frames, so timing never depends on the main thread.
-import { Core, type CoreMsg } from "./dsp/core";
-import { Bed } from "./dsp/bed";
+// The one AudioWorklet: it wraps the studio (voices, ambience, mixer) and outputs the finished
+// stereo mix. Messages carry absolute frames, so timing never depends on the main thread.
+import { Studio, type StudioMsg } from "./dsp/studio";
 
 declare const sampleRate: number;
 declare const currentFrame: number;
@@ -10,32 +9,21 @@ declare class AudioWorkletProcessor {
   readonly port: MessagePort;
 }
 
-export type WorkletMsg = CoreMsg | { type: "bed"; weights: number[]; level?: number };
+export type WorkletMsg = StudioMsg;
 
 class BiomeCore extends AudioWorkletProcessor {
-  private core = new Core(sampleRate);
-  private bed = new Bed(sampleRate);
+  private studio = new Studio(sampleRate);
   private ticks = 0;
   constructor() {
     super();
-    this.port.onmessage = (e: MessageEvent<WorkletMsg>) => {
-      const m = e.data;
-      if (m.type === "bed") {
-        this.bed.setWeights(m.weights);
-        if (m.level !== undefined) this.bed.level = m.level;
-      } else this.core.handle(m);
-    };
+    this.port.onmessage = (e: MessageEvent<WorkletMsg>) => this.studio.handle(e.data);
   }
   process(_in: Float32Array[][], outputs: Float32Array[][]) {
-    const [dry, send, del] = outputs;
-    if (!dry?.[0]) return true;
-    const dryR = dry[1] ?? dry[0];
-    const sendL = send?.[0] ?? new Float32Array(dry[0].length);
-    const sendR = send?.[1] ?? sendL;
-    this.core.process(currentFrame, dry[0], dryR, sendL, sendR, del?.[0], del?.[1] ?? del?.[0]);
-    this.bed.render(dry[0], dryR);
+    const out = outputs[0];
+    if (!out?.[0]) return true;
+    this.studio.process(currentFrame, out[0], out[1] ?? out[0]);
     // A heartbeat for the UI and the tests: voice count and peak, about 6 times a second.
-    if (++this.ticks % 64 === 0) this.port.postMessage({ type: "stats", voices: this.core.voices, peak: this.core.peak });
+    if (++this.ticks % 64 === 0) this.port.postMessage({ type: "stats", voices: this.studio.core.voices, peak: this.studio.mix.peak });
     return true;
   }
 }

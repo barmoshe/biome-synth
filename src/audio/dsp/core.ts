@@ -1,7 +1,8 @@
 // The synth core: a sample-accurate event queue and a voice pool, plus the world-wide modulation
 // (tape wobble, tape stop) and the sidechain duck. No Web Audio types, so the AudioWorklet wraps it
 // and the tests render it directly.
-import { makeVoice, type Mod, type NoteParams, type Voice } from "./voices";
+import { makeVoice, type Mod, type NoteParams, type Sample, type Voice } from "./voices";
+import type { Mixer } from "./mix";
 
 export type NoteEvent = {
   /** Absolute sample frame to start on. */
@@ -15,6 +16,8 @@ export type NoteEvent = {
   ducks?: boolean;
   /** Optional id so a held note can be released later. */
   id?: number;
+  /** Mixer bus (0 drums, 1 bass, 2 music, 3 lead, 4 ambience); music when absent. */
+  bus?: number;
 };
 
 /** The world's modulation, set by the conductor when the world changes. */
@@ -34,11 +37,13 @@ export type CoreMsg =
   | { type: "mod"; mod: Partial<ModState> }
   /** Slow every voice to a stop over `seconds` from `frame` (the power-cut transition), then recover. */
   | { type: "tapestop"; frame: number; seconds: number }
-  | { type: "panic" };
+  | { type: "panic" }
+  /** A decoded recording for the sample bank (transferred, not copied). */
+  | { type: "sample"; id: string; data: Float32Array; sr: number };
 
 const MAX_VOICES = 48;
 
-type Live = { v: Voice; send: number; delay: number; id?: number; born: number; gl: number; gr: number };
+type Live = { v: Voice; send: number; delay: number; id?: number; born: number; gl: number; gr: number; bus: number };
 
 export class Core {
   private queue: NoteEvent[] = [];
@@ -50,9 +55,9 @@ export class Core {
   private pendingDucks: number[] = [];
   private stop: { frame: number; seconds: number } | null = null;
   private lfo = 0;
-  readonly mod: Mod = { pitch: 1 };
+  readonly bank = new Map<string, Sample>();
+  readonly mod: Mod = { pitch: 1, bank: this.bank };
   state: ModState = { wobble: 0, wobbleHz: 0.3, duck: 0, duckRelease: 0.22 };
-  peak = 0;
 
   constructor(private sr: number, block = 128) {
     this.mono = new Float32Array(block);
@@ -65,6 +70,7 @@ export class Core {
     else if (msg.type === "release") this.releases.push({ id: msg.id, frame: msg.frame });
     else if (msg.type === "mod") this.state = { ...this.state, ...msg.mod };
     else if (msg.type === "tapestop") this.stop = { frame: msg.frame, seconds: msg.seconds };
+    else if (msg.type === "sample") this.bank.set(msg.id, { data: msg.data, sr: msg.sr });
     else if (msg.type === "panic") {
       this.queue.length = 0;
       for (const l of this.live) l.v.release();
@@ -81,9 +87,11 @@ export class Core {
     return this.live.length;
   }
 
-  /** Render one block starting at absolute frame `start` into dry, reverb-send and delay-send stereo buffers. */
-  process(start: number, dryL: Float32Array, dryR: Float32Array, sendL: Float32Array, sendR: Float32Array, delL?: Float32Array, delR?: Float32Array) {
-    const n = dryL.length;
+  /** Render one block starting at absolute frame `start` onto the mixer's buses and sends. */
+  process(start: number, mix: Pick<Mixer, "bus" | "send" | "del">) {
+    const [sendL, sendR] = mix.send;
+    const [delL, delR] = mix.del;
+    const n = sendL.length;
     if (this.mono.length < n) (this.mono = new Float32Array(n)), (this.duckBuf = new Float32Array(n));
     const end = start + n;
 
@@ -115,7 +123,7 @@ export class Core {
       if (this.live.length >= MAX_VOICES) this.steal();
       const pan = Math.max(-1, Math.min(1, ev.note.pan ?? 0));
       const a = ((pan + 1) * Math.PI) / 4;
-      const l: Live = { v: makeVoice(this.sr, ev.note, this.mod), send: ev.send ?? 0.2, delay: ev.delay ?? 0, id: ev.id, born: ev.frame, gl: Math.cos(a), gr: Math.sin(a) };
+      const l: Live = { v: makeVoice(this.sr, ev.note, this.mod), send: ev.send ?? 0.2, delay: ev.delay ?? 0, id: ev.id, born: ev.frame, gl: Math.cos(a), gr: Math.sin(a), bus: Math.max(0, Math.min(4, ev.bus ?? 2)) };
       this.live.push(l);
       starting.push({ l, off });
       if (ev.ducks && this.state.duck > 0) this.pendingDucks.push(off);
@@ -141,6 +149,7 @@ export class Core {
       this.mono.fill(0, 0, n);
       l.v.render(this.mono, off, n - off);
       const ducked = l.v.duck;
+      const [dryL, dryR] = mix.bus[l.bus];
       for (let i = off; i < n; i++) {
         const s = ducked ? this.mono[i] * this.duckBuf[i] : this.mono[i];
         const L = s * l.gl;
@@ -149,17 +158,13 @@ export class Core {
         dryR[i] += R;
         sendL[i] += L * l.send;
         sendR[i] += R * l.send;
-        if (delL && l.delay) {
+        if (l.delay) {
           delL[i] += L * l.delay;
-          delR![i] += R * l.delay;
+          delR[i] += R * l.delay;
         }
       }
     }
     this.live = this.live.filter((l) => !l.v.done);
-
-    let p = this.peak * 0.995;
-    for (let i = 0; i < n; i++) p = Math.max(p, Math.abs(dryL[i]), Math.abs(dryR[i]));
-    this.peak = p;
   }
 
   private steal() {

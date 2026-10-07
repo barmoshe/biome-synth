@@ -21,7 +21,8 @@ export type Patch =
   | "metal" // six inharmonic squares, high-passed: 808-style hats
   | "clap" // three noise bursts and a tail
   | "snare" // noise + tone body
-  | "vox"; // saw through two formants: vox chops
+  | "vox" // saw through two formants: vox chops
+  | "sample"; // a recorded zone from the sample bank, repitched
 
 export type NoteParams = {
   patch: Patch;
@@ -44,10 +45,16 @@ export type NoteParams = {
   vowel?: number; // 0..1 for vox (a .. e .. i .. o)
   crush?: number; // 0..1 bitcrush amount
   duck?: boolean; // this voice dips when a ducking kick plays (sidechain)
+  sample?: string; // the bank id of a recorded zone ("kalimba/3")
+  root?: number; // the zone's pitch as a MIDI note (fractional when tuned); freq repitches it
+  start?: number; // seconds into the sample to start from
 };
 
-/** Global modulation shared by every voice: tape wobble and tape stop live here. */
-export type Mod = { pitch: number };
+/** A decoded recording: mono samples at their own rate. */
+export type Sample = { data: Float32Array; sr: number };
+
+/** Global state shared by every voice: tape wobble and tape stop, and the sample bank. */
+export type Mod = { pitch: number; bank?: Map<string, Sample> };
 
 const TAU = Math.PI * 2;
 
@@ -528,6 +535,45 @@ class VoxVoice extends Base {
   }
 }
 
+/** A recorded zone, repitched with cubic (Hermite) interpolation: the browsers' own buffer playback
+ * is linear and aliases when it pitches up. A missing sample plays silence. */
+class SampleVoice extends Base {
+  private pos: number;
+  private rate: number;
+  private s: Sample | undefined;
+  private lp: OnePole | null;
+  constructor(sr: number, p: NoteParams, m: Mod) {
+    super(sr, p, m, 0.001, 0, 1, 0.08);
+    this.s = p.sample ? m.bank?.get(p.sample) : undefined;
+    const root = p.root ?? 69;
+    this.rate = (p.freq / (440 * Math.pow(2, (root - 69) / 12))) * ((this.s?.sr ?? sr) / sr);
+    this.pos = (p.start ?? 0) * (this.s?.sr ?? sr);
+    this.lp = p.cutoff ? new OnePole(sr, p.cutoff) : null;
+    if (!this.s) this.done = true;
+  }
+  sample() {
+    const d = this.s!.data;
+    const i = Math.floor(this.pos);
+    if (i + 2 >= d.length) {
+      this.done = true;
+      return 0;
+    }
+    const f = this.pos - i;
+    const y0 = d[i > 0 ? i - 1 : 0], y1 = d[i], y2 = d[i + 1], y3 = d[i + 2];
+    const c1 = 0.5 * (y2 - y0);
+    const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
+    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+    const p = this.p;
+    const bend = p.bend ? Math.pow(2, (p.bend * Math.min(1, this.sec / Math.max(0.05, p.sweep ?? p.dur))) / 12) : 1;
+    this.pos += this.rate * bend * this.mod.pitch;
+    const y = ((c3 * f + c2) * f + c1) * f + y1;
+    return this.lp ? this.lp.run(y) : y;
+  }
+  render(out: Float32Array, offset: number, n: number) {
+    if (!this.done) super.render(out, offset, n);
+  }
+}
+
 const IDENT: Mod = { pitch: 1 };
 
 export function makeVoice(sr: number, p: NoteParams, mod: Mod = IDENT): Voice {
@@ -568,5 +614,7 @@ export function makeVoice(sr: number, p: NoteParams, mod: Mod = IDENT): Voice {
       return new SnareVoice(sr, p, mod);
     case "vox":
       return new VoxVoice(sr, p, mod);
+    case "sample":
+      return new SampleVoice(sr, p, mod);
   }
 }

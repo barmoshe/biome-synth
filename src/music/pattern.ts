@@ -10,6 +10,8 @@ export type Layer = (typeof LAYERS)[number];
 
 export type Section = {
   name: SectionName;
+  /** A written song's name for the section ("Palm Wine"). */
+  title?: string;
   /** Length in bars, 2..16. */
   bars: number;
   /** 0..1, drives density, brightness and the visuals. */

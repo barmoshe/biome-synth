@@ -12,6 +12,16 @@ make it the best you can before deploy". Each line is checked when it is verifie
 - [x] Creatures solo when left alone; Canopy's parrot answers the player
 - [x] Loudness matched across worlds (offline renders, RMS 0.11-0.15)
 
+## Sound redesign (docs/research/sound-redesign.md)
+
+- [x] Baseline measured (docs/research/sound-baseline.md)
+- [x] CC0 sample pipeline: fetch, cut, pitch check, Opus + AAC, manifest, CREDITS.md
+- [x] Sampler voice (cubic interpolation), the whole mix in the worklet: buses, room and hall, dub delay, glue, limiter
+- [x] Written songs with segments, chord charts, parts, taps on the grid, wakes, answer bars, the parrot echo, lap memory
+- [x] Canopy: "Parrot Talk" (measured; waiting on Bar's ear)
+- [ ] Orbit, Aurora, Deep, Neon songs, and the tempo lattice for the crossings
+- [ ] Mobile check of memory and decoding with samples
+
 ## Worlds that live
 
 - [x] Ambient life per biome (shooting stars, rover, caribou, geese, fish, manta, birds, butterflies, leaves, cars, searchlights)

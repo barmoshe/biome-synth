@@ -3,7 +3,8 @@ import type { WorldMusic } from "../world";
 import { orbit } from "./orbit";
 import { aurora } from "./aurora";
 import { deep } from "./deep";
-import { canopy } from "./canopy";
+import { songWorld } from "../song";
+import { parrotTalk } from "../songs/canopy";
 import { neon } from "./neon";
 
-export const makeWorlds = (): WorldMusic[] => [orbit(), aurora(), deep(), canopy(), neon()];
+export const makeWorlds = (): WorldMusic[] => [orbit(), aurora(), deep(), songWorld(parrotTalk), neon()];

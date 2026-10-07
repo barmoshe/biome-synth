@@ -6,6 +6,7 @@ import { rng } from "../src/music/rng";
 import { degreeToMidi, inScale, midiToDegree, pc, snap, SCALES } from "../src/music/theory";
 import type { Out, StepCtx, WorldMusic } from "../src/music/world";
 import { makeWorlds } from "../src/music/worlds";
+import { instrumentsFor, loaded } from "../src/audio/instruments";
 import { tVoice } from "../src/music/worlds/aurora";
 
 const freqToMidi = (f: number) => 69 + 12 * Math.log2(f / 440);
@@ -102,7 +103,12 @@ describe("worlds", () => {
     expect(orbit.has("kick") || orbit.has("snare") || orbit.has("clap")).toBe(false); // no drum kit in space
     expect(aurora.has("res") && aurora.has("tom")).toBe(true); // ice cracks and a frame drum
     expect(deep.has("kick") && deep.has("chirp")).toBe(true); // bubble kick and water drops
-    expect(canopy.has("res") && canopy.has("tom") && canopy.has("pluck")).toBe(true); // bell, log drum, kalimba
+    // Canopy is a written song on recorded instruments: bell, frame drum, strumsticks, kalimba, bass.
+    for (const id of instrumentsFor("jungle")) loaded.add(id);
+    const recorded = new Set(run(worlds[3]).map(({ o }) => o.note.sample?.split("/")[0]).filter(Boolean));
+    loaded.clear();
+    expect(canopy.has("sample") || canopy.has("pluck")).toBe(true);
+    for (const id of ["agogo", "framedrum", "guitar", "kalimba", "bass"]) expect(recorded).toContain(id);
     expect(neon.has("clap") && neon.has("metal") && neon.has("kick")).toBe(true); // 2-step kit
   });
 

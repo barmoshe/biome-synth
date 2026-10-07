@@ -9,7 +9,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "types": ["vite/client"]
   },
-  "include": ["src/world", "src/audio", "src/music", "src/ui", "src/shared", "src/*.ts", "src/*.tsx", "tests/audio.test.ts", "tests/music.test.ts", "tests/mind.test.ts"]
+  "include": ["src/world", "src/audio", "src/music", "src/ui", "src/shared", "src/*.ts", "src/*.tsx", "tests/audio.test.ts", "tests/music.test.ts", "tests/mind.test.ts", "tests/song.test.ts"]
 }

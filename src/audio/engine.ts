@@ -1,29 +1,17 @@
 // One AudioContext for the page, created inside the first gesture (iOS refuses sound otherwise).
-// Graph: worklet dry ──────────┐
-//        worklet send → reverb ─┴→ master → soft clip → limiter → analyser → speakers
-// Adapted from riff-link's engine (../riff-link/src/audio/engine.ts).
+// Graph: the worklet (voices, ambience and the whole mix, see dsp/studio.ts) → volume → analyser →
+// speakers. Effects, throws and sweeps are messages with absolute frames, not AudioParams, so the
+// browser and the offline renders mix the same way.
 import workletUrl from "./worklet.ts?worker&url";
 import type { WorkletMsg } from "./worklet";
+import { DEFAULT_FX, type WorldFx } from "./dsp/mix";
 
-/** Each world's effects: two reverbs, a dub delay with a filter in its loop, a master filter, modulation. */
-export type WorldFx = {
-  room: number; // send gain into a short bright room
-  hall: number; // send gain into a long hall
-  delayTime: number; // seconds
-  feedback: number; // 0..0.9
-  delayLp: number; // Hz, the filter inside the delay loop
-  delayWet: number; // 0..1
-  masterLp: number; // Hz
-  wobble: number; // cents of tape wobble
-  wobbleHz: number;
-  duck: number; // sidechain depth 0..0.9
-  duckRelease: number; // seconds
-};
+export type { WorldFx } from "./dsp/mix";
+export { DEFAULT_FX } from "./dsp/mix";
 
 export type Engine = {
   ctx: BaseAudioContext;
   node: AudioWorkletNode;
-  master: GainNode;
   analyser: AnalyserNode;
   post(msg: WorkletMsg, transfer?: Transferable[]): void;
   stats: { voices: number; peak: number };
@@ -38,142 +26,39 @@ export type Engine = {
   fx: WorldFx;
 };
 
-/** A generated stereo reverb tail: exponentially decaying noise with a darkening top end. */
-export function makeImpulse(ctx: BaseAudioContext, seconds: number, decay: number, dark = 0.8): AudioBuffer {
-  const len = Math.round(ctx.sampleRate * seconds);
-  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    let lp = 0;
-    let seed = ch ? 0x2545f491 : 0x9e3779b9;
-    for (let i = 0; i < len; i++) {
-      seed ^= seed << 13;
-      seed ^= seed >>> 17;
-      seed ^= seed << 5;
-      const white = ((seed >>> 0) / 4294967296) * 2 - 1;
-      const t = i / len;
-      const k = 0.95 - dark * t; // high frequencies die first
-      lp += Math.max(0.05, k) * (white - lp);
-      d[i] = lp * Math.pow(1 - t, decay);
-    }
-  }
-  return buf;
-}
-
-export const DEFAULT_FX: WorldFx = { room: 0.3, hall: 0.3, delayTime: 0.375, feedback: 0.3, delayLp: 2500, delayWet: 0.3, masterLp: 18000, wobble: 0, wobbleHz: 0.3, duck: 0, duckRelease: 0.22 };
-
 export async function buildGraph(ctx: BaseAudioContext): Promise<Engine> {
   await ctx.audioWorklet.addModule(workletUrl);
-  const node = new AudioWorkletNode(ctx, "biome-core", { numberOfInputs: 0, numberOfOutputs: 3, outputChannelCount: [2, 2, 2] });
-
-  const master = ctx.createGain();
-  master.gain.value = 0.9;
+  const node = new AudioWorkletNode(ctx, "biome-core", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
   const volume = ctx.createGain();
   volume.gain.value = 0.9;
-
-  // Reverbs: a short bright room and a long dark hall, mixed per world.
-  const sendIn = ctx.createGain();
-  const roomIn = ctx.createGain();
-  const hallIn = ctx.createGain();
-  const room = ctx.createConvolver();
-  room.buffer = makeImpulse(ctx, 0.9, 3, 0.5);
-  const hall = ctx.createConvolver();
-  hall.buffer = makeImpulse(ctx, 6.5, 2.2, 0.85);
-  sendIn.connect(roomIn).connect(room).connect(master);
-  sendIn.connect(hallIn).connect(hall).connect(master);
-
-  // The dub delay: a filter inside the feedback loop, so each echo is darker than the last.
-  const delayIn = ctx.createGain();
-  const delay = ctx.createDelay(2);
-  const loopLp = ctx.createBiquadFilter();
-  loopLp.type = "lowpass";
-  const feedback = ctx.createGain();
-  const delayWet = ctx.createGain();
-  delayIn.connect(delay);
-  delay.connect(loopLp);
-  loopLp.connect(feedback);
-  feedback.connect(delay);
-  loopLp.connect(delayWet);
-  delayWet.connect(master);
-  delayWet.connect(sendIn); // echoes bloom into the reverb
-
-  const masterLp = ctx.createBiquadFilter();
-  masterLp.type = "lowpass";
-  masterLp.Q.value = 0.9;
-
-  // Soft clip so stacked voices never hard-clip, then a limiter at about -1 dB.
-  const shaper = ctx.createWaveShaper();
-  const curve = new Float32Array(1024);
-  for (let i = 0; i < curve.length; i++) {
-    const x = (i / (curve.length - 1)) * 2 - 1;
-    curve[i] = Math.tanh(x * 1.4) / Math.tanh(1.4);
-  }
-  shaper.curve = curve;
-  shaper.oversample = "2x";
-  const limiter = ctx.createDynamicsCompressor();
-  limiter.threshold.value = -2;
-  limiter.knee.value = 0;
-  limiter.ratio.value = 20;
-  limiter.attack.value = 0.002;
-  limiter.release.value = 0.12;
-
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
   analyser.smoothingTimeConstant = 0.6;
-
-  node.connect(master, 0);
-  node.connect(sendIn, 1);
-  node.connect(delayIn, 2);
-  master.connect(masterLp).connect(shaper).connect(limiter).connect(volume).connect(analyser).connect(ctx.destination);
+  node.connect(volume).connect(analyser).connect(ctx.destination);
 
   const stats = { voices: 0, peak: 0 };
   node.port.onmessage = (e) => {
     if (e.data?.type === "stats") Object.assign(stats, e.data);
   };
   const post = (msg: WorkletMsg, transfer?: Transferable[]) => node.port.postMessage(msg, transfer ?? []);
-
-  const glide = (p: AudioParam, v: number, at: number, ramp: number) => {
-    p.cancelScheduledValues(at);
-    p.setValueAtTime(p.value, at);
-    if (ramp <= 0) p.setValueAtTime(v, at);
-    else p.linearRampToValueAtTime(v, at + ramp);
-  };
+  const frame = (t: number) => Math.round(t * ctx.sampleRate);
 
   const engine: Engine = {
     ctx,
     node,
-    master,
     analyser,
     stats,
     post,
     fx: { ...DEFAULT_FX },
     setFx(fx, at, ramp) {
       engine.fx = fx;
-      glide(roomIn.gain, fx.room, at, ramp);
-      glide(hallIn.gain, fx.hall, at, ramp);
-      glide(delay.delayTime, fx.delayTime, at, Math.max(0.05, ramp));
-      glide(feedback.gain, fx.feedback, at, ramp);
-      glide(loopLp.frequency, fx.delayLp, at, ramp);
-      glide(delayWet.gain, fx.delayWet, at, ramp);
-      glide(masterLp.frequency, fx.masterLp, at, ramp);
-      post({ type: "mod", mod: { wobble: fx.wobble, wobbleHz: fx.wobbleHz, duck: fx.duck, duckRelease: fx.duckRelease } });
+      post({ type: "fx", fx, frame: frame(at), ramp });
     },
     throwDelay(at, hold) {
-      const fb = feedback.gain;
-      fb.cancelScheduledValues(at);
-      fb.setValueAtTime(0.86, at);
-      fb.setTargetAtTime(engine.fx.feedback, at + hold * 0.4, hold / 3);
-      const lp = loopLp.frequency;
-      lp.cancelScheduledValues(at);
-      lp.setValueAtTime(engine.fx.delayLp * 1.6, at);
-      lp.exponentialRampToValueAtTime(Math.max(300, engine.fx.delayLp * 0.4), at + hold);
-      lp.setTargetAtTime(engine.fx.delayLp, at + hold, 0.5);
+      post({ type: "throw", frame: frame(at), hold });
     },
     sweepLp(to, at, dur) {
-      const f = masterLp.frequency;
-      f.cancelScheduledValues(at);
-      f.setValueAtTime(Math.max(40, f.value), at);
-      f.exponentialRampToValueAtTime(Math.max(40, to), at + dur);
+      post({ type: "sweep", frame: frame(at), to, dur });
     },
     setVolume(v) {
       volume.gain.setTargetAtTime(Math.max(0, Math.min(1, v)), ctx.currentTime, 0.05);

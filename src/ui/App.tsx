@@ -80,7 +80,7 @@ function Game({ stage }: { stage: Stage }) {
               <h1>{biome.name}</h1>
               <p className="genre">{snap.bridging ? "crossing over" : `${snap.genre} · ${snap.bpm} bpm`}</p>
               <p className="section">
-                {snap.section}
+                {snap.title ?? snap.section}
                 <span className={snap.sectionBy === "you" ? "by you" : "by"}>{snap.sectionBy === "you" ? "your theme" : "band"}</span>
               </p>
             </div>

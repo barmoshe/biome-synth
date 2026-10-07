@@ -203,7 +203,7 @@ export class Mind {
    * Called on every downbeat. Updates engagement and closes the phrase after a bar of silence (or
    * once it runs two bars): it is learned, becomes the theme, and into silence the band answers.
    */
-  bar(step: number): { answer: LineNote[]; at: number } | null {
+  bar(step: number): { line: LineNote[]; answer: LineNote[]; at: number } | null {
     const w = this.world;
     if (!w) return null;
     this.engagement = this.engagement * 0.75 + this.barNotes * 0.25;
@@ -217,7 +217,7 @@ export class Mind {
     }
     const line = this.close();
     // Answer only into silence: while the player keeps going, the band just learns.
-    return silent ? { answer: this.answer(line), at: step } : { answer: [], at: step };
+    return silent ? { line, answer: this.answer(line), at: step } : { line, answer: [], at: step };
   }
 
   /** Turn the open phrase into a line on the world's grid, learn it, and maybe take it as the theme. */

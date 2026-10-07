@@ -55,7 +55,7 @@ export class Conductor {
     this.cur = first;
     this.world.reset(deps.seed);
     this.mind.enter(this.world);
-    this.section = this.mind.write("drift", this.world);
+    this.section = this.world.drivesForm ? this.world.section!() : this.mind.write("drift", this.world);
   }
 
   get world() {
@@ -117,13 +117,14 @@ export class Conductor {
       if (t !== this.cur && (Math.floor(local / w.stepsPerBar) % 2 === 0 || away < 0.25)) this.leave(t, step, time);
     }
 
-    // Sections walk the arc the mind picks.
-    if (!this.bridge && step - this.secStart >= this.section.bars * this.world.stepsPerBar && pos === 0) this.advance(step);
+    // Sections walk the arc the mind picks (a written song walks its own).
+    if (!this.world.drivesForm && !this.bridge && step - this.secStart >= this.section.bars * this.world.stepsPerBar && pos === 0) this.advance(step);
 
     // On each downbeat the mind listens back: a finished phrase gets an answer and becomes the theme.
     if (pos === 0) {
       const heard = this.mind.bar(step);
-      if (heard && !this.bridge) {
+      if (heard && !this.bridge && this.world.drivesForm) this.world.heard?.(heard.line);
+      else if (heard && !this.bridge) {
         this.answer(heard.answer, step);
         if (this.mind.themeBy === "you") {
           this.section = { ...this.section, motif: this.mind.motif(this.section.name), by: "you" };
@@ -135,6 +136,13 @@ export class Conductor {
     const c = this.ctx(step, true);
     const off = this.timing(c.pos);
     const outs = [...this.world.step(c), ...this.sing(step, c)];
+    if (this.world.drivesForm) {
+      const s = this.world.section!();
+      if (s !== this.section) {
+        this.section = s;
+        this.deps.onSection?.(s);
+      }
+    }
     const due = this.answers.get(step);
     if (due) {
       outs.push(...due);
@@ -174,6 +182,7 @@ export class Conductor {
   private leave(to: number, step: number, time: number) {
     const kind = FORWARD[`${this.cur}>${to}`] ?? "sweep";
     const w = this.world;
+    w.leaving?.();
     const bars = kind === "powercut" ? 1 : 2;
     const end = step + bars * w.stepsPerBar;
     this.bridge = { to, kind, end, startStep: step };
@@ -200,7 +209,7 @@ export class Conductor {
     w.reset(this.deps.seed + step);
     this.mind.enter(w);
     this.secStart = step;
-    this.section = this.mind.write(b.kind === "powercut" ? "bloom" : "pulse", w);
+    this.section = w.drivesForm ? w.section!() : this.mind.write(b.kind === "powercut" ? "bloom" : "pulse", w);
     this.deps.fx?.(w.fx, time, b.kind === "powercut" ? 0.02 : 1.2);
     this.pendingStepSec = null;
     this.entered = true;

@@ -5,7 +5,9 @@ import { getEngine, readLevels, type Engine } from "./audio/engine";
 import type { NoteEvent } from "./audio/dsp/core";
 import { Conductor } from "./music/conductor";
 import type { Section } from "./music/pattern";
-import type { Out } from "./music/world";
+import { busOf, type Out } from "./music/world";
+import { loadWorld } from "./audio/samples";
+import { BIOMES } from "./shared/biomes";
 import { ROLES, type Role } from "./shared/biomes";
 import { P } from "./world/palette";
 import { BW, STAGE, WORLD } from "./world/types";
@@ -18,6 +20,8 @@ export type Snapshot = {
   biome: number;
   weights: number[];
   section: Section["name"];
+  /** A written song's name for the section ("Palm Wine"). */
+  title: string | null;
   /** Whose theme the band is developing. */
   sectionBy: "band" | "you";
   /** The world the band is playing (it lags the camera by a bridge). */
@@ -128,6 +132,7 @@ export class Stage {
       biome: this.world.dominant(),
       weights: w,
       section: c.name,
+      title: c.title ?? null,
       sectionBy: c.by ?? "band",
       genre: this.conductor.world.genre,
       bpm: this.conductor.world.bpm,
@@ -241,6 +246,11 @@ export class Stage {
     // A three-note hello so you know sound works, then the band.
     [0, 0.5, 1].forEach((x, i) => this.play(this.conductor.sky(0, x, { bright: 0.6, speed: 0, pan: x - 0.5 }, false), now + i * 0.12, true));
     clock.start(now + 0.5);
+    // The recorded instruments: the playing world first, then the others in travel order.
+    void (async () => {
+      const first = this.conductor.cur;
+      for (let k = 0; k < BIOMES.length; k++) await loadWorld(e, BIOMES[(first + k) % BIOMES.length].id);
+    })();
     this.lastInput = performance.now();
     this.emit({ started: true });
   }
@@ -328,7 +338,7 @@ export class Stage {
     const evs: NoteEvent[] = [];
     for (const o of outs) {
       const t = time + (o.offset ?? 0);
-      evs.push({ frame: Math.round(t * sr), note: o.note, send: o.send, delay: o.delay, ducks: o.ducks, id: o.id });
+      evs.push({ frame: Math.round(t * sr), note: o.note, send: o.send, delay: o.delay, ducks: o.ducks, id: o.id, bus: busOf(o) });
       if (o.throw) e.throwDelay(t, o.throw);
       if (!o.silent && !quiet) this.visQueue.push({ time: t, role: o.role, from: o.from, vel: o.note.vel });
     }
@@ -339,6 +349,29 @@ export class Stage {
 
   private postBed() {
     this.engine?.post({ type: "bed", weights: this.world.weights(), level: 0.5 });
+  }
+
+  /**
+   * When a player note should sound: now, or on the next grid line `q` steps apart in the playing
+   * world (a step, a beat), so taps land in time. A line that passed under 40 ms ago still counts.
+   */
+  private gridTime(q: number): number {
+    const e = this.engine!;
+    const now = e.ctx.currentTime;
+    const c = this.clock;
+    if (!q || !c || !c.pending.length) return now + 0.01;
+    const sec = c.stepSec;
+    const ref = c.pending[c.pending.length - 1];
+    const back = Math.ceil((ref.time - now) / sec) + 1;
+    const start = this.conductor.start;
+    for (let k = -back; k < back + q * 2 + 2; k++) {
+      const step = ref.step + k;
+      const time = ref.time + k * sec;
+      if ((((step - start) % q) + q) % q !== 0) continue;
+      if (time >= now + 0.008) return time;
+      if (now - time < 0.04) return now + 0.008;
+    }
+    return now + 0.01;
   }
 
   /** The step that is sounding now. */
@@ -609,7 +642,7 @@ export class Stage {
     const e = this.engine;
     if (!e) return;
     const outs = this.conductor.tap(this.audibleStep(), role).map((o) => ({ ...o, id, note: { ...o.note, vel: o.note.vel * vel } }));
-    this.play(outs, e.ctx.currentTime + 0.01, true);
+    this.play(outs, this.gridTime(outs[0]?.q ?? 0), true);
     this.world.play(role, "player", vel, c ?? undefined);
   }
 
@@ -625,7 +658,7 @@ export class Stage {
     const fast = Math.min(1, speed / 500);
     const bright = Math.min(1, height * 0.8 + fast * 0.4);
     const outs = this.conductor.sky(this.audibleStep(), x / this.world.W, { bright, speed, pan: (x / this.world.W) * 1.2 - 0.6 });
-    this.play(outs, e.ctx.currentTime + 0.01, true);
+    this.play(outs, this.gridTime(outs[0]?.q ?? 0), true);
     const deg = this.skyDeg(x);
     this.world.burst(x, y, NOTE_C[((deg % NOTE_C.length) + NOTE_C.length) % NOTE_C.length], 1 - fast * 0.6);
     return deg;
