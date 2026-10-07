@@ -76,6 +76,7 @@ export function canopy(): WorldMusic {
     swing: 0.5,
     humanize: 0.01,
     barScale: 0.75,
+    level: 1.55,
     fx: { room: 0.45, hall: 0.06, delayTime: (60 / 108) / 3 * 2, feedback: 0.18, delayLp: 4000, delayWet: 0.12, masterLp: 17000, wobble: 0, wobbleHz: 0.3, duck: 0, duckRelease: 0.2 },
     reset() {
       line = 2;

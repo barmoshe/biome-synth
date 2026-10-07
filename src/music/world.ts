@@ -61,6 +61,8 @@ export interface WorldMusic {
   fx: WorldFx;
   /** How long each section runs here, relative to the default. */
   barScale: number;
+  /** Loudness trim so crossing a border never jumps in volume (measured from offline renders). */
+  level: number;
   /** Reset state (on entering the world). */
   reset(seed: number): void;
   /** Write a section of the local band's arc. */

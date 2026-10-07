@@ -46,6 +46,7 @@ export function aurora(): WorldMusic {
     swing: 0.5,
     humanize: 0.04,
     barScale: 1.5,
+    level: 1.15,
     fx: { room: 0.05, hall: 1, delayTime: 1.5, feedback: 0.4, delayLp: 3200, delayWet: 0.28, masterLp: 14000, wobble: 0, wobbleHz: 0.1, duck: 0, duckRelease: 0.2 },
     reset() {
       m = 4;

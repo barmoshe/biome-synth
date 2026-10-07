@@ -60,6 +60,7 @@ export function neon(): WorldMusic {
     swing: 0.58,
     humanize: 0.003,
     barScale: 1,
+    level: 1.25,
     fx: { room: 0.5, hall: 0.25, delayTime: (60 / 132) * 0.75, feedback: 0.3, delayLp: 3500, delayWet: 0.22, masterLp: 18000, wobble: 0, wobbleHz: 0.3, duck: 0.72, duckRelease: 0.2 },
     reset() {
       kick = KICKS[0];

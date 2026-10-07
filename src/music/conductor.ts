@@ -133,7 +133,7 @@ export class Conductor {
 
     const c = this.ctx(step);
     const off = this.timing(c.pos);
-    return this.world.step(c).map((o) => ({ ...o, offset: (o.offset ?? 0) + off }));
+    return this.trim(this.world.step(c)).map((o) => ({ ...o, offset: (o.offset ?? 0) + off }));
   }
 
   private leave(to: number, step: number, time: number) {
@@ -203,12 +203,17 @@ export class Conductor {
       });
   }
 
+  private trim(outs: Out[]): Out[] {
+    const g = this.world.level;
+    return g === 1 ? outs : outs.map((o) => ({ ...o, note: { ...o.note, vel: Math.min(1, o.note.vel * g) } }));
+  }
+
   /** The player tapped a creature. */
   tap(step: number, role: Role): Out[] {
     this.lastPlayer = step;
     this.taps[role] = (this.taps[role] ?? 0) + 1;
     this.notes++;
-    return this.world.tap(role, this.ctx(step));
+    return this.trim(this.world.tap(role, this.ctx(step)));
   }
 
   /** The player touched open sky at x (0..1). */
@@ -216,7 +221,7 @@ export class Conductor {
     this.lastPlayer = step;
     this.notes++;
     this.taps.lead = (this.taps.lead ?? 0) + 1;
-    return this.world.sky(this.skyDeg(x), { ...this.ctx(step), ...o });
+    return this.trim(this.world.sky(this.skyDeg(x), { ...this.ctx(step), ...o }));
   }
 
   /** Two octaves across the screen, in the playing world's own degrees. */

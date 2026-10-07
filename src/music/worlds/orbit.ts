@@ -50,6 +50,7 @@ export function orbit(): WorldMusic {
     swing: 0.5,
     humanize: 0,
     barScale: 1,
+    level: 0.72,
     fx: { room: 0.05, hall: 0.95, delayTime: 0.47, feedback: 0.42, delayLp: 2600, delayWet: 0.35, masterLp: 16000, wobble: 7, wobbleHz: 0.23, duck: 0, duckRelease: 0.2 },
     reset() {
       orbits = {

@@ -53,6 +53,7 @@ export function deep(): WorldMusic {
     swing: 0.54,
     humanize: 0.004,
     barScale: 1.25,
+    level: 1.6,
     fx: { room: 0.15, hall: 0.55, delayTime: (60 / 118) * 0.75, feedback: 0.55, delayLp: 1800, delayWet: 0.55, masterLp: 6500, wobble: 4, wobbleHz: 0.4, duck: 0, duckRelease: 0.2 },
     reset() {
       root = 0;
