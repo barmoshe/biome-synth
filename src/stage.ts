@@ -26,6 +26,23 @@ export type Snapshot = {
 };
 
 const DRIFT = [0, 9, 26];
+/** Note colours by scale degree: the ribbon and the bursts share them. */
+const NOTE_C = [P.goldGlow, P.mint, P.skyLight, P.pink, P.lime, P.lilac, P.peach];
+
+type Pointer = {
+  critter: Critter | null;
+  /** The last creature this finger strummed, so a creature plays once per pass. */
+  over: Critter | null;
+  holdId?: number;
+  lastDeg?: number;
+  x: number;
+  y: number;
+  t: number;
+  /** Smoothed velocity, art px per second. */
+  vx: number;
+  vy: number;
+  moved: number;
+};
 
 export class Stage {
   world = new World();
@@ -41,7 +58,7 @@ export class Stage {
   private levels = { rms: 0, low: 0, mid: 0, high: 0 };
   private travel: { from: number; to: number; t: number } | null = null;
   private keysHeld = new Set<string>();
-  private pointers = new Map<number, { critter: Critter | null; holdId?: number; lastDeg?: number }>();
+  private pointers = new Map<number, Pointer>();
   private bedTimer = 0;
   private listeners = new Set<() => void>();
   snap: Snapshot;
@@ -280,10 +297,11 @@ export class Stage {
     }
     const [x, y] = this.toArt(e);
     const critter = this.world.pick(x, y);
-    const info: { critter: Critter | null; holdId?: number; lastDeg?: number } = { critter };
+    const info: Pointer = { critter, over: critter, x, y, t: performance.now(), vx: 0, vy: 0, moved: 0 };
     this.pointers.set(e.pointerId, info);
     if (critter) this.tapCritter(critter, info);
-    else info.lastDeg = this.skyNote(x, y);
+    else info.lastDeg = this.skyNote(x, y, 0);
+    this.world.trail(e.pointerId, x, y, NOTE_C[(info.lastDeg ?? 0) % NOTE_C.length]);
     navigator.vibrate?.(8);
   };
 
@@ -295,18 +313,66 @@ export class Stage {
       this.canvas.style.cursor = over ? "pointer" : "crosshair";
     }
     const info = this.pointers.get(e.pointerId);
-    if (!info || info.critter || !this.engine) return;
+    if (!info || !this.engine) return;
     const [x, y] = this.toArt(e);
-    // Sliding across the sky plays each new note it crosses.
+    const now = performance.now();
+    const dt = Math.max(1, now - info.t) / 1000;
+    const k = 0.35;
+    info.vx += ((x - info.x) / dt - info.vx) * k;
+    info.vy += ((y - info.y) / dt - info.vy) * k;
+    info.moved += Math.hypot(x - info.x, y - info.y);
+    info.x = x;
+    info.y = y;
+    info.t = now;
+    const speed = Math.hypot(info.vx, info.vy);
+
+    // The ribbon follows the finger, and the finger stirs the weather.
+    this.world.trail(e.pointerId, x, y, NOTE_C[(info.lastDeg ?? 0) % NOTE_C.length], speed);
+    this.world.stir(x, y, info.vx, info.vy);
+
+    // Sweeping over creatures strums them, each once per pass.
+    const c = this.world.pick(x, y, 1);
+    if (c && c !== info.over) {
+      info.over = c;
+      this.playRole(c.role, c, undefined, Math.min(1, 0.55 + speed / 600));
+      navigator.vibrate?.(4);
+      return;
+    }
+    if (!c) info.over = null;
+    if (c) return;
+    // Sliding across the sky plays each new note it crosses: fast is short and bright, slow sings.
     const deg = this.skyDeg(x);
-    if (deg !== info.lastDeg) info.lastDeg = this.skyNote(x, y);
+    if (deg !== info.lastDeg) info.lastDeg = this.skyNote(x, y, speed);
   };
 
   private onUp = (e: PointerEvent) => {
     const info = this.pointers.get(e.pointerId);
     this.pointers.delete(e.pointerId);
-    if (info?.holdId && this.engine) this.engine.post({ type: "release", id: info.holdId, frame: Math.round(this.engine.ctx.currentTime * this.engine.ctx.sampleRate) });
+    this.world.trailEnd(e.pointerId);
+    const eng = this.engine;
+    if (!info || !eng) return;
+    if (info.holdId) eng.post({ type: "release", id: info.holdId, frame: Math.round(eng.ctx.currentTime * eng.ctx.sampleRate) });
+    // A fast flick throws a shooting star that plays a cascade in tempo.
+    const speed = Math.hypot(info.vx, info.vy);
+    if (speed > 260 && info.moved > 20 && performance.now() - info.t < 80) this.fling(info, speed);
   };
+
+  private fling(info: Pointer, speed: number) {
+    const e = this.engine!;
+    const sec = 60 / (this.clock?.bpm ?? 100) / 4;
+    const n = Math.max(4, Math.min(8, Math.round(speed / 140)));
+    const dir = info.vy < -Math.abs(info.vx) * 0.3 ? 1 : info.vy > Math.abs(info.vx) * 0.3 ? -1 : info.vx >= 0 ? 1 : -1;
+    const start = info.lastDeg ?? this.skyDeg(info.x);
+    const t0 = e.ctx.currentTime + 0.02;
+    const degs: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const deg = start + dir * (i + 1) * (i % 2 ? 1 : 2) - (i % 2 ? 0 : dir);
+      degs.push(deg);
+      this.sound({ role: i === n - 1 ? "lead" : "arp", deg, vel: 0.75 - i * 0.05, len: i === n - 1 ? 6 : 2, from: "echo" }, t0 + i * sec, sec, { bright: 0.8 });
+    }
+    this.world.fling(info.x, info.y, info.vx, info.vy, degs.map((d) => NOTE_C[((d % NOTE_C.length) + NOTE_C.length) % NOTE_C.length]), sec);
+    navigator.vibrate?.([6, 30, 6]);
+  }
 
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -362,14 +428,14 @@ export class Stage {
     this.playRole(c.role, c, id);
   }
 
-  private playRole(role: Role, c: Critter | null, id?: number) {
+  private playRole(role: Role, c: Critter | null, id?: number, vel = 1) {
     const e = this.engine;
     if (!e) return;
     const step = this.audibleStep();
     const now = e.ctx.currentTime + 0.01;
     const sec = 60 / (this.clock?.bpm ?? 100) / 4;
-    for (const h of this.conductor.playerRole(step, role)) this.sound(h, now, sec, { id });
-    this.world.play(role, "player", 1, c ?? undefined);
+    for (const h of this.conductor.playerRole(step, role)) this.sound({ ...h, vel: h.vel * vel }, now, sec, { id });
+    this.world.play(role, "player", vel, c ?? undefined);
   }
 
   private skyDeg(x: number) {
@@ -377,16 +443,20 @@ export class Stage {
     return Math.round((x / this.world.W) * 12) + 3;
   }
 
-  private skyNote(x: number, y: number): number {
+  /** A lead note from open sky. `speed` in art px/s: fast slides play short and bright, slow ones sing. */
+  private skyNote(x: number, y: number, speed: number): number {
     const e = this.engine;
     if (!e) return 0;
     const deg = this.skyDeg(x);
-    const bright = Math.max(0, Math.min(1, 1 - y / this.world.H));
+    const height = Math.max(0, Math.min(1, 1 - y / this.world.H));
+    const fast = Math.min(1, speed / 500);
+    const bright = Math.min(1, height * 0.8 + fast * 0.4);
     const step = this.audibleStep();
-    this.conductor.playerLead(step, deg);
+    this.conductor.playerLead(step, deg, fast < 0.4);
     const sec = 60 / (this.clock?.bpm ?? 100) / 4;
-    this.sound({ role: "lead", deg, vel: 0.55 + 0.4 * bright, len: 3, from: "player" }, e.ctx.currentTime + 0.01, sec, { bright, pan: (x / this.world.W) * 1.2 - 0.6 });
-    this.world.burst(x, y, [P.goldGlow, P.mint, P.skyLight, P.pink, P.lime][deg % 5]);
+    const len = fast > 0.6 ? 1 : fast > 0.25 ? 2 : 4;
+    this.sound({ role: "lead", deg, vel: 0.5 + 0.35 * height + 0.15 * fast, len, from: "player" }, e.ctx.currentTime + 0.01, sec, { bright, pan: (x / this.world.W) * 1.2 - 0.6 });
+    this.world.burst(x, y, NOTE_C[deg % NOTE_C.length], 1 - fast * 0.6);
     return deg;
   }
 }

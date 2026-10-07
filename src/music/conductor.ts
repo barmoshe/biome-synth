@@ -113,14 +113,14 @@ export class Conductor {
   }
 
   /** The player tapped open sky: a lead note at absolute degree `deg`. */
-  playerLead(step: number, deg: number) {
+  playerLead(step: number, deg: number, echo = true) {
     this.responder.notePlayed(step, deg);
     this.recentPhrase.push(deg);
     if (this.recentPhrase.length > 24) this.recentPhrase.shift();
     this.playerNotes++;
     this.taps.lead = (this.taps.lead ?? 0) + 1;
     // A soft echo a dotted eighth later, a third up: the world sings back.
-    this.queue(step + 3, { role: "arp", deg: deg + 2, vel: 0.3, len: 2, from: "echo" });
+    if (echo) this.queue(step + 3, { role: "arp", deg: deg + 2, vel: 0.3, len: 2, from: "echo" });
   }
 
   /** The player tapped a critter. Returns the note it should play now, in harmony. */

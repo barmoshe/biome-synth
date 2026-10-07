@@ -62,4 +62,18 @@ it("snaps", async () => {
     w.render(ctx, 3.3, { rms: 0.3 }, 0);
     writeFileSync(`${dir}/${name}.png`, png(sw, sh, ctxImg.data, Number(process.env.SNAP_SCALE ?? 3)));
   }
+  // A drag across the sky and a flung star, mid-flight.
+  w.camX = 3 * BW + BW / 2 - sw / 2;
+  for (const c of w.critters) c.act = 0;
+  for (let i = 0; i <= 60; i++) {
+    const x = 60 + i * 5;
+    const y = 120 + Math.sin(i * 0.15) * 40;
+    w.trail(1, x, y, [28, 42, 48, 57, 27][Math.floor(i / 13)], 250 + i * 6);
+    w.stir(x, y, 300, 0);
+    w.update(0.008, { rms: 0.3, low: 0.3, high: 0.3 }, 0);
+  }
+  w.fling(360, 100, 400, -200, [28, 42, 48, 57, 27, 53], 0.12);
+  for (let i = 0; i < 20; i++) w.update(0.016, { rms: 0.3, low: 0.3, high: 0.3 }, 0);
+  w.render(ctx, 3.3, { rms: 0.3 }, 0);
+  writeFileSync(`${dir}/drag.png`, png(sw, sh, ctxImg.data, Number(process.env.SNAP_SCALE ?? 3)));
 }, 120000);

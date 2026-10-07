@@ -16,6 +16,11 @@ export type Critter = CritterSpec & { biome: number; wx: number; act: number; pr
 type Spark = { x: number; y: number; vx: number; vy: number; life: number; c: number; note?: boolean };
 type Flake = { x: number; y: number; vx: number; vy: number; c: number; kind: string };
 type Light = { x: number; y: number; r: number; k: number };
+type TrailPt = { x: number; y: number; c: number; age: number; w: number };
+type Trail = { pts: TrailPt[]; live: boolean };
+type Comet = { id: number; x: number; y: number; vx: number; vy: number; colors: number[]; i: number; timer: number; interval: number };
+
+const TRAIL_LIFE = 0.75;
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
@@ -59,6 +64,10 @@ export class World {
   private scratch = new Strip(96, 96, T, false);
   private scratch2 = new Strip(96, 96, T, false);
   private lights: Light[] = [];
+  private trails = new Map<number, Trail>();
+  private comets: Comet[] = [];
+  private cometId = -1;
+  private retired = 1e9;
 
   constructor() {
     this.layers = LAYER_F.map((f, i) => this.paintLayer(f, i));
@@ -192,15 +201,72 @@ export class World {
   }
 
   /** A note from open sky: a ring of sparks where the finger is. */
-  burst(px: number, py: number, color: number) {
+  burst(px: number, py: number, color: number, size = 1) {
     const wx = this.camX + px;
     const wy = py - (this.H - STAGE);
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2;
-      this.sparks.push({ x: wx, y: wy, vx: Math.cos(a) * 40, vy: Math.sin(a) * 40, life: 0.5, c: color });
+    const n = Math.round(6 + 10 * size);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const v = 22 + 26 * size;
+      this.sparks.push({ x: wx, y: wy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.3 + 0.25 * size, c: color });
     }
-    this.sparks.push({ x: wx, y: wy, vx: 0, vy: -22, life: 1.3, c: P.white, note: true });
-    this.lights.push({ x: px, y: py, r: 26, k: 1 });
+    if (size > 0.6) this.sparks.push({ x: wx, y: wy, vx: 0, vy: -22, life: 1.3, c: P.white, note: true });
+    this.lights.push({ x: px, y: py, r: 12 + 16 * size, k: 1 });
+  }
+
+  /** The finger's ribbon: a point every pixel or so along the drag, fading in about half a second. */
+  trail(id: number, x: number, y: number, c: number, speed = 0) {
+    let t = this.trails.get(id);
+    if (!t || !t.live) {
+      t = { pts: [], live: true };
+      this.trails.set(id, t);
+    }
+    const w = 1.6 + Math.min(2.6, speed / 220);
+    const last = t.pts[t.pts.length - 1];
+    if (last) {
+      const d = Math.hypot(x - last.x, y - last.y);
+      const n = Math.min(60, Math.floor(d / 1.2));
+      for (let i = 1; i <= n; i++) t.pts.push({ x: last.x + ((x - last.x) * i) / (n + 1), y: last.y + ((y - last.y) * i) / (n + 1), c, age: 0, w });
+    }
+    t.pts.push({ x, y, c, age: 0, w });
+    // The head sheds a sparkle now and then, more the faster it goes.
+    if (Math.random() < 0.15 + Math.min(0.5, speed / 900))
+      this.sparks.push({ x: this.camX + x, y: y - (this.H - STAGE), vx: (Math.random() - 0.5) * 30, vy: -10 - Math.random() * 20, life: 0.4 + Math.random() * 0.3, c: Math.random() < 0.5 ? P.white : c });
+    if (t.pts.length > 400) t.pts.splice(0, t.pts.length - 400);
+  }
+
+  trailEnd(id: number) {
+    const t = this.trails.get(id);
+    if (!t) return;
+    t.live = false;
+    this.trails.delete(id);
+    this.trails.set(this.retired++, t); // keeps fading under a retired key
+  }
+
+  /** The finger stirs the air: snow swirls, bubbles scatter, rain bends, fireflies flee. */
+  stir(x: number, y: number, vx: number, vy: number) {
+    const R2 = 46 * 46;
+    for (const f of this.flakes) {
+      const dx = f.x - this.camX - x;
+      const dy = f.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > R2) continue;
+      const k = (1 - d2 / R2) * 0.18;
+      f.vx += vx * k;
+      f.vy += vy * k;
+    }
+    for (const sp of this.sparks) {
+      const dx = sp.x - this.camX - x;
+      const dy = sp.y + (this.H - STAGE) - y;
+      if (dx * dx + dy * dy < R2) (sp.vx += vx * 0.05), (sp.vy += vy * 0.05);
+    }
+  }
+
+  /** A shooting star thrown by a flick: it flies on and bursts once per note of its cascade. */
+  fling(x: number, y: number, vx: number, vy: number, colors: number[], interval: number) {
+    const sp = Math.hypot(vx, vy) || 1;
+    const v = Math.min(420, sp);
+    this.comets.push({ id: this.cometId--, x, y, vx: (vx / sp) * v, vy: (vy / sp) * v, colors, i: 0, timer: 0.02, interval });
   }
 
   update(dt: number, levels: { rms: number; low: number; high: number }, beat: number) {
@@ -222,6 +288,31 @@ export class World {
     if (this.sparks.length > 300) this.sparks.splice(0, this.sparks.length - 300);
     for (const l of this.lights) l.k -= dt * 2;
     this.lights = this.lights.filter((l) => l.k > 0);
+    for (const [id, t] of this.trails) {
+      for (const p of t.pts) p.age += dt;
+      while (t.pts.length && t.pts[0].age > TRAIL_LIFE) t.pts.shift();
+      if (!t.live && !t.pts.length) this.trails.delete(id);
+    }
+    for (const c of this.comets) {
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.vx *= 0.985;
+      c.vy = c.vy * 0.985 + 30 * dt;
+      // Bounce off the screen edges so the cascade stays in view.
+      if (c.x < 4 || c.x > this.W - 4) c.vx = -c.vx;
+      if (c.y < 4 || c.y > this.H - 30) c.vy = -Math.abs(c.vy) * (c.y < 4 ? -1 : 1);
+      if (c.i < c.colors.length) {
+        this.trail(c.id, c.x, c.y, c.colors[c.i], 300);
+        c.timer -= dt;
+        if (c.timer <= 0) {
+          this.burst(c.x, c.y, c.colors[c.i], c.i === c.colors.length - 1 ? 1 : 0.55);
+          c.i++;
+          c.timer += c.interval;
+          if (c.i >= c.colors.length) this.trailEnd(c.id);
+        }
+      }
+    }
+    this.comets = this.comets.filter((c) => c.i < c.colors.length);
     this.updateWeather(dt, beat);
   }
 
@@ -242,7 +333,12 @@ export class World {
     for (const f of this.flakes) {
       f.x += f.vx * dt;
       f.y += f.vy * dt;
-      if (f.kind === "snow") f.vx = 8 * Math.sin(f.y * 0.04 + f.x);
+      // Each kind drifts back to its own motion after the finger has stirred it.
+      const relax = Math.min(1, dt * 1.5);
+      if (f.kind === "snow") (f.vx += (8 * Math.sin(f.y * 0.04 + f.x * 0.01) - f.vx) * relax), (f.vy += (18 - f.vy) * relax);
+      else if (f.kind === "rain") (f.vx += (-20 - f.vx) * relax * 2), (f.vy += (190 - f.vy) * relax * 2);
+      else if (f.kind === "bubbles") (f.vx *= 1 - relax), (f.vy += (-20 - f.vy) * relax);
+      else if (f.kind === "dust") (f.vx += (-8 - f.vx) * relax), (f.vy *= 1 - relax);
       if (f.kind === "fireflies") (f.vx += (Math.random() - 0.5) * 40 * dt), (f.vy += (Math.random() - 0.5) * 40 * dt);
     }
     const H = this.H;
@@ -390,6 +486,22 @@ export class World {
       }
   }
 
+  /** Ribbons: bright at the head, the note colour in the middle, dissolving with dither at the tail. */
+  private drawTrails() {
+    const fb = this.fb;
+    for (const t of this.trails.values())
+      for (const p of t.pts) {
+        const f = p.age / TRAIL_LIFE;
+        const x = Math.round(p.x);
+        const y = Math.round(p.y);
+        if (bayer(x, y) < f * f) continue;
+        const r = p.w * (1 - f * 0.7);
+        const c = f < 0.12 ? P.white : f < 0.55 ? p.c : dark[1][p.c];
+        if (r < 1.2) fb.set(x, y, c);
+        else fb.disc(x, y, r - 0.7, c);
+      }
+  }
+
   render(ctx: CanvasRenderingContext2D, t: number, levels: { rms: number }, beat: number) {
     const { W, H, fb } = this;
     const px = fb.px;
@@ -419,6 +531,10 @@ export class World {
       frameLights.push({ x: s[0] + c.w / 2, y: s[1] + c.h / 2, r, k: Math.min(1, 0.45 + c.act) });
     }
     for (const f of this.flakes) if (f.kind === "fireflies") frameLights.push({ x: f.x - this.camX, y: f.y, r: 5, k: 0.7 });
+    for (const t of this.trails.values()) {
+      const head = t.pts[t.pts.length - 1];
+      if (head && t.live) frameLights.push({ x: head.x, y: head.y, r: 18, k: 0.8 });
+    }
     const persistent = this.lights;
     this.lights = persistent.concat(frameLights);
     this.glow();
@@ -454,6 +570,7 @@ export class World {
     }
 
     this.drawLayer(FRONT);
+    this.drawTrails();
 
     // Sparks and floating notes.
     for (const s of this.sparks) {
