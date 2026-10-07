@@ -62,11 +62,6 @@ function Game({ stage }: { stage: Stage }) {
     return () => stage.unmount();
   }, [stage]);
 
-  // Ask the server what the AI band can do the first time the menu opens.
-  useEffect(() => {
-    if (snap.menu) void stage.checkAi();
-  }, [snap.menu, stage]);
-
   const biome = BIOMES[snap.biome];
   const p = snap.prefs;
 
@@ -86,7 +81,7 @@ function Game({ stage }: { stage: Stage }) {
               <p className="genre">{snap.bridging ? "crossing over" : `${snap.genre} · ${snap.bpm} bpm`}</p>
               <p className="section">
                 {snap.section}
-                <span className={snap.sectionBy === "claude" ? "by claude" : "by"}>{snap.sectionBy === "claude" ? "claude" : "band"}</span>
+                <span className={snap.sectionBy === "you" ? "by you" : "by"}>{snap.sectionBy === "you" ? "your theme" : "band"}</span>
               </p>
             </div>
             <div className="buttons">
@@ -127,26 +122,6 @@ function Game({ stage }: { stage: Stage }) {
                 </div>
               </div>
               <div className="row">
-                <span>AI conductor</span>
-                {snap.ai && !snap.ai.claude ? (
-                  <span className="muted">not set up</span>
-                ) : (
-                  <button className={`px small ${snap.bandMode !== "local" ? "on" : ""}`} onClick={() => void stage.toggleClaude()} aria-pressed={snap.bandMode !== "local"}>
-                    {snap.bandMode === "claude" ? "On" : "Off"}
-                  </button>
-                )}
-              </div>
-              <div className="row">
-                <span>AI bed</span>
-                {snap.ai && !snap.ai.lyria ? (
-                  <span className="muted">not set up</span>
-                ) : (
-                  <button className={`px small ${snap.bed !== "off" && snap.bed !== "error" ? "on" : ""}`} onClick={() => void stage.toggleBed()} aria-pressed={snap.bed !== "off" && snap.bed !== "error"}>
-                    {snap.bed === "connecting" ? "Waking" : snap.bed === "buffering" ? "Listening" : snap.bed === "playing" ? "On" : "Off"}
-                  </button>
-                )}
-              </div>
-              <div className="row">
                 <button className="px small" onClick={() => stage.toggleHelp(true)}>
                   How to play
                 </button>
@@ -179,7 +154,6 @@ function Game({ stage }: { stage: Stage }) {
           )}
 
           {snap.toast && <p className="hud note">{snap.toast}</p>}
-          {(snap.bed === "playing" || snap.bed === "buffering") && <p className="hud disclosure">AI music by Lyria</p>}
         </>
       )}
 

@@ -1,4 +1,4 @@
-// The section format: what the local band writes and what Claude writes through its tool.
+// The section format: what the worlds and the mind write together.
 // A section says how much of each layer plays and how hard, plus an optional motif and chord plan;
 // each world interprets it through its own genre and mechanic. clampSection never rejects:
 // whatever comes in, something playable comes out.
@@ -25,8 +25,8 @@ export type Section = {
   chords: number[];
   /** Steering for the Lyria bed, ignored when it is off. */
   lyria?: { prompts: { text: string; weight: number }[]; density: number; brightness: number };
-  /** Who wrote it: shown in the HUD. */
-  by?: "band" | "claude";
+  /** Whose theme it develops: the band's own, or the player's. Shown in the HUD. */
+  by?: "band" | "you";
 };
 
 export type LineNote = { step: number; len: number; deg: number };
@@ -70,7 +70,7 @@ export function clampSection(raw: unknown, fallbackName: SectionName = "bloom", 
     layers,
     motif: typeof r.motif === "string" ? formatLine(parseLine(r.motif, stepsPerBar * 2)) : "",
     chords,
-    by: r.by === "claude" ? "claude" : "band",
+    by: r.by === "you" ? "you" : "band",
   };
   if (r.lyria && typeof r.lyria === "object" && Array.isArray(r.lyria.prompts)) {
     const prompts = r.lyria.prompts

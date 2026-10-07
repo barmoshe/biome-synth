@@ -15,7 +15,7 @@ make it the best you can before deploy". Each line is checked when it is verifie
 ## Worlds that live
 
 - [x] Ambient life per biome (shooting stars, rover, caribou, geese, fish, manta, birds, butterflies, leaves, cars, searchlights)
-- [ ] Day/night variation by the local hour (the conductor passes `daylight`; nothing uses it yet)
+- [ ] Day/night variation by the local hour: the composer holds the energy down at night; the pictures do not change yet
 - [x] Performance: 1.2-3.9 ms per frame headless (`SNAP=perf`); world paint about 0.9 s behind a loader
 
 ## Product
@@ -31,16 +31,22 @@ make it the best you can before deploy". Each line is checked when it is verifie
 - [x] Mobile: portrait scale and layout (checked at 375x812), safe areas
 - [x] README with screenshots and how it works
 
-## AI band
+## The composer (on the device)
 
-- [x] Claude conductor: `/api/compose`, structured output, cached prompt, fallback, rate limit, kill switch, fixture mode
-- [x] Lyria bed: Worker relay (protocol from @google/genai 2.27.0), PCM worklet, position-weighted prompts, session cap, disclosure
-- [x] Both absent without keys: the menu says "not set up", the local band carries everything (tested)
-- [ ] Live check with real keys (needs Bar's Anthropic and Gemini keys as Worker secrets)
+Bar, 2026-10-07: smart procedural generative music instead of depending on Claude and Lyria.
+
+- [x] Listens: phrases end after a bar of silence or two bars of playing; engagement per bar
+- [x] Learns: a second-order Markov model over intervals and onsets, trained on each world's idiom and the player's phrases (tested)
+- [x] Answers each phrase in the world's lead voice, ending on the tonic; stops when the player plays again (tested)
+- [x] Takes the player's phrase as the theme and develops it per section; the theme travels between worlds (tested, and played live)
+- [x] Chord walks on each genre's graph, ending on a chord that leads home (tested)
+- [x] Form follows the player: busy reaches the surge, idle never does, the night holds energy down (tested)
+- [x] The band's lead steps back while the player plays (tested)
+- [ ] Bar deletes the retired AI files (`src/ai`, `src/worker`, `tests/worker.test.ts`, `tsconfig.worker.json`) and the streamed-bed player; the agent's delete was blocked
 
 ## Engineering
 
 - [x] CI on GitHub: typecheck, tests, build (green)
 - [x] Production build: 107 KB gzipped JS + 15 KB worklet
-- [ ] Deploy: Cloudflare Worker on a bar-builds.com subdomain (DNS is at GoDaddy; needs Bar's call)
+- [ ] Deploy: now a static site (no server), so any static host works, including a bar-builds.com subdomain on Vercel where the DNS already points
 - [ ] A license (Bar's call)

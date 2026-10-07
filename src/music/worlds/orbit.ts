@@ -51,6 +51,10 @@ export function orbit(): WorldMusic {
     humanize: 0,
     barScale: 1,
     level: 0.72,
+    // Long rising lines over the pedal, leaning on the raised fourth (degree 3).
+    idiom: ["0:3:4 3:3:7 6:3:9 10:4:11 14:2:9", "0:2:7 4:2:9 8:4:11 12:4:14", "0:6:9 6:2:7 8:8:4", "0:4:2 4:4:4 8:4:3 12:4:4"],
+    // Dmaj7#11 and E/D, nothing else: the pedal never moves.
+    chordGraph: { 0: [0, 1], 1: [0] },
     fx: { room: 0.05, hall: 0.95, delayTime: 0.47, feedback: 0.42, delayLp: 2600, delayWet: 0.35, masterLp: 16000, wobble: 7, wobbleHz: 0.23, duck: 0, duckRelease: 0.2 },
     reset() {
       orbits = {

@@ -43,7 +43,7 @@ export type SkyCtx = StepCtx & { bright: number; speed: number; pan: number };
 
 export interface WorldMusic {
   id: BiomeId;
-  /** Genre line for the HUD and Claude. */
+  /** Genre line for the HUD. */
   genre: string;
   root: number;
   scale: readonly number[];
@@ -63,6 +63,14 @@ export interface WorldMusic {
   barScale: number;
   /** Loudness trim so crossing a border never jumps in volume (measured from offline renders). */
   level: number;
+  /** Example lines in the genre's melodic language (step grammar): the mind learns from them. */
+  idiom?: readonly string[];
+  /** Which chord (a scale degree) may follow which. Absent: the world keeps its own harmony. */
+  chordGraph?: Record<number, number[]>;
+  /** The band's melody voice, for themes and answers. Absent: the sky voice, played softer. */
+  voice?(deg: number, c: StepCtx): Out[];
+  /** The world performs the theme itself (through `section.motif`), so the conductor does not. */
+  ownsTheme?: boolean;
   /** Reset state (on entering the world). */
   reset(seed: number): void;
   /** Write a section of the local band's arc. */

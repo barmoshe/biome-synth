@@ -42,7 +42,7 @@ describe("theory", () => {
   });
 });
 
-describe("clampSection (bad Claude output always becomes something playable)", () => {
+describe("clampSection (any input becomes something playable)", () => {
   const golden: [string, unknown][] = [
     ["null", null],
     ["a string", "play something nice"],
@@ -177,29 +177,6 @@ describe("conductor", () => {
     let kicks = 0;
     for (let k = 0; k < 64; k++, s++, t += 0.11) kicks += c.hits(s, t).filter((o) => o.note.patch === "kick").length;
     expect(kicks).toBeGreaterThan(2);
-  });
-
-  it("uses Claude's section when it arrives in time, the world's own when it does not", async () => {
-    const c = new Conductor({ seed: 1, target: () => 4, weightOf: () => 1, composer: async () => ({ name: "pulse", bars: 4, energy: 0.9, layers: { drums: 1 } }) }, 4);
-    c.hits(0, 0);
-    await new Promise((r) => setTimeout(r, 0));
-    for (let s = 1; s <= 9 * 16; s++) c.hits(s, s * 0.11);
-    expect(c.section.by).toBe("claude");
-
-    const slow = new Conductor({ seed: 1, target: () => 4, weightOf: () => 1, composer: () => new Promise(() => {}) }, 4);
-    for (let s = 0; s <= 9 * 16; s++) slow.hits(s, s * 0.11);
-    expect(slow.section.by).toBe("band");
-  });
-
-  it("switching Claude on mid-section asks at once, so its section is the very next one", async () => {
-    const c = new Conductor({ seed: 2, target: () => 4, weightOf: () => 1 }, 4);
-    for (let s = 0; s < 40; s++) c.hits(s, s * 0.11);
-    let asked = 0;
-    c.setComposer(async () => (asked++, { name: "pulse", bars: 4, energy: 0.8 }));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(asked).toBe(1);
-    for (let s = 40; s <= 8 * 16; s++) c.hits(s, s * 0.11);
-    expect(c.section.by).toBe("claude");
   });
 
   it("sky notes use the playing world's own degrees", () => {

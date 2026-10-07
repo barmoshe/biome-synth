@@ -1,10 +1,12 @@
 // Aurora: tintinnabuli under the polar night (Arvo Pärt; Biosphere's arctic ambient). No grid:
 // events come on breaths of three to seven pulses, slightly off time. A melody voice (M) moves by
 // step around B; every M note brings its T-voice, the nearest tone of the B-minor triad, above
-// then below in turn. Every tap comes out sounding like Pärt.
+// then below in turn. Every tap comes out sounding like Pärt. When the band has a theme, the
+// M-voice sings it, one note a breath, so even the player's phrase comes back as tintinnabuli.
 import type { Role } from "../../shared/biomes";
 import { SCALES } from "../theory";
 import { baseSection, hz, out, type Out, type StepCtx, type WorldMusic } from "../world";
+import { parseLine, type LineNote } from "../pattern";
 
 const W = { root: 59, scale: SCALES.minor }; // B Aeolian
 const TRIAD = [0, 2, 4]; // B D F#
@@ -24,13 +26,17 @@ export function aurora(): WorldMusic {
   let nextBreath = 0;
   let breaths = 0;
   let above = true;
+  let theme: { src: string; line: LineNote[]; i: number } = { src: "", line: [], i: 0 };
 
   const bell = (role: Role, deg: number, oct: number, v: number, c: StepCtx, from: Out["from"]): Out =>
     out(role, { patch: "bell", freq: hz(W, deg, oct), vel: v, dur: 0.05, release: 3.5 + c.rng() * 2, bright: 0.25 }, { send: 0.9, delay: 0.25, from, offset: (c.rng() - 0.5) * 0.08 });
 
   /** One M step plus its T-voice: the whole rule. */
   const pair = (mRole: Role, tRole: Role, c: StepCtx, from: Out["from"], v = 1): Out[] => {
-    m = Math.max(-2, Math.min(9, m + (c.rng() < 0.5 ? 1 : -1)));
+    const motif = from === "band" ? c.section.motif : "";
+    if (motif && motif !== theme.src) theme = { src: motif, line: parseLine(motif, 32), i: 0 };
+    if (motif && theme.line.length) m = Math.max(-2, Math.min(9, theme.line[theme.i++ % theme.line.length].deg));
+    else m = Math.max(-2, Math.min(9, m + (c.rng() < 0.5 ? 1 : -1)));
     const t = tVoice(m, above);
     above = !above;
     return [bell(mRole, m, 0, 0.3 * v, c, from), bell(tRole, t, 0, 0.2 * v, c, from)];
@@ -47,12 +53,16 @@ export function aurora(): WorldMusic {
     humanize: 0.04,
     barScale: 1.5,
     level: 1.15,
+    // The M-voice moves by step around the tonic, never leaping.
+    idiom: ["0:8:4 8:8:3 16:8:2 24:8:3", "0:8:2 8:8:3 16:16:4", "0:4:6 8:4:5 16:8:4", "0:8:0 8:8:1 16:8:2 24:8:1"],
+    ownsTheme: true,
     fx: { room: 0.05, hall: 1, delayTime: 1.5, feedback: 0.4, delayLp: 3200, delayWet: 0.28, masterLp: 14000, wobble: 0, wobbleHz: 0.1, duck: 0, duckRelease: 0.2 },
     reset() {
       m = 4;
       nextBreath = 0;
       breaths = 0;
       above = true;
+      theme = { src: "", line: [], i: 0 };
     },
     write(name) {
       return baseSection(name, w);

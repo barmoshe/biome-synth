@@ -2,27 +2,17 @@
 // to the next. Worlds change on a bar line once the camera has moved on, through a DJ-style bridge
 // (dissolve, submerge, surface, power cut, lift-off): the outgoing world plays without drums while
 // the tempo glides, then the new world starts on its downbeat with its own effects.
-// Claude (when awake) writes the next section while the current one plays; it swaps in at the
-// boundary, and if Claude is late or wrong the world's own section plays. Claude is never in the
-// timing loop.
-import type { BiomeId, Role } from "../shared/biomes";
+// The mind (mind.ts) composes: it picks each next section from how the player plays, writes its
+// chords and theme, and answers the player's phrases. The conductor performs it: the theme in the
+// world's melody voice, the answer a bar after a phrase ends, and room for the player (the band's
+// lead and arp step back while they play).
+import type { Role } from "../shared/biomes";
 import type { WorldFx } from "../audio/engine";
 import { rng } from "./rng";
-import { clampSection, type Layer, type Section, type SectionName } from "./pattern";
+import { parseLine, type Layer, type LineNote, type Section } from "./pattern";
 import type { Out, SkyCtx, StepCtx, WorldMusic } from "./world";
 import { makeWorlds } from "./worlds";
-
-export const NEXT: Record<SectionName, SectionName> = { drift: "pulse", pulse: "bloom", bloom: "surge", surge: "dissolve", dissolve: "pulse" };
-
-export type ComposeRequest = {
-  world: BiomeId;
-  genre: string;
-  name: SectionName;
-  stepsPerBar: number;
-  previous: Section;
-  player: { notes: number; taps: Partial<Record<string, number>> };
-};
-export type Composer = (req: ComposeRequest) => Promise<unknown>;
+import { Mind } from "./mind";
 
 export type TransitionKind = "dissolve" | "submerge" | "surface" | "powercut" | "liftoff" | "sweep";
 const FORWARD: Record<string, TransitionKind> = { "0>1": "dissolve", "1>2": "submerge", "2>3": "surface", "3>4": "powercut", "4>0": "liftoff" };
@@ -32,7 +22,6 @@ export type ConductorDeps = {
   /** The biome under the camera, and how much of the playing world is still on screen. */
   target(): number;
   weightOf(world: number): number;
-  composer?: Composer | null;
   /** Effects automation, at absolute audio times. */
   fx?(fx: WorldFx, at: number, ramp: number): void;
   sweep?(to: number, at: number, dur: number): void;
@@ -46,25 +35,27 @@ type Bridge = { to: number; kind: TransitionKind; end: number; startStep: number
 
 export class Conductor {
   readonly worlds: WorldMusic[];
+  readonly mind: Mind;
   cur = 0;
   /** Global step where the current world began. */
   start = 0;
   section: Section;
   private secStart = 0;
-  private next: Section | null = null;
-  private asking = false;
   private bridge: Bridge | null = null;
   private r: () => number;
-  private taps: Record<string, number> = {};
-  private notes = 0;
   private lastPlayer = -1e9;
+  private theme: { src: string; line: LineNote[] } = { src: "", line: [] };
+  /** The band's answer to the player's last phrase, by global step. */
+  private answers = new Map<number, Out[]>();
 
   constructor(private deps: ConductorDeps, first = 0) {
     this.worlds = makeWorlds();
     this.r = rng(deps.seed, "conductor");
+    this.mind = new Mind({ rng: rng(deps.seed, "mind"), daylight: () => deps.daylight?.() ?? 0.5 });
     this.cur = first;
     this.world.reset(deps.seed);
-    this.section = this.world.write("drift", this.r);
+    this.mind.enter(this.world);
+    this.section = this.mind.write("drift", this.world);
   }
 
   get world() {
@@ -78,14 +69,8 @@ export class Conductor {
     return this.bridge !== null;
   }
 
-  setComposer(c: Composer | null) {
-    this.deps.composer = c;
-    if (!c) this.next = null;
-    // Switched on mid-section: ask now, so Claude's first section is the very next one.
-    else if (!this.bridge) this.prepareNext();
-  }
-
-  private ctx(step: number): StepCtx {
+  /** The step context. `band` adds the room the band leaves while the player plays. */
+  private ctx(step: number, band = false): StepCtx {
     const w = this.world;
     const local = Math.max(0, step - this.start);
     let section = this.section;
@@ -93,6 +78,9 @@ export class Conductor {
       // The bridge: the outgoing world without drums or lead, thinning out.
       const layers = { ...section.layers, drums: 0, lead: 0, bass: this.bridge.kind === "powercut" ? 0 : section.layers.bass * 0.5 } as Record<Layer, number>;
       section = { ...section, layers, energy: Math.min(section.energy, 0.35) };
+    } else if (band && this.mind.listening(step)) {
+      const layers = { ...section.layers, lead: section.layers.lead * 0.35, arp: section.layers.arp * 0.75 };
+      section = { ...section, layers };
     }
     return {
       step: local,
@@ -129,13 +117,58 @@ export class Conductor {
       if (t !== this.cur && (Math.floor(local / w.stepsPerBar) % 2 === 0 || away < 0.25)) this.leave(t, step, time);
     }
 
-    // Sections walk the world's arc.
+    // Sections walk the arc the mind picks.
     if (!this.bridge && step - this.secStart >= this.section.bars * this.world.stepsPerBar && pos === 0) this.advance(step);
-    if (step === this.secStart) this.prepareNext();
 
-    const c = this.ctx(step);
+    // On each downbeat the mind listens back: a finished phrase gets an answer and becomes the theme.
+    if (pos === 0) {
+      const heard = this.mind.bar(step);
+      if (heard && !this.bridge) {
+        this.answer(heard.answer, step);
+        if (this.mind.themeBy === "you") {
+          this.section = { ...this.section, motif: this.mind.motif(this.section.name), by: "you" };
+          this.deps.onSection?.(this.section);
+        }
+      }
+    }
+
+    const c = this.ctx(step, true);
     const off = this.timing(c.pos);
-    return this.trim(this.world.step(c)).map((o) => ({ ...o, offset: (o.offset ?? 0) + off }));
+    const outs = [...this.world.step(c), ...this.sing(step, c)];
+    const due = this.answers.get(step);
+    if (due) {
+      outs.push(...due);
+      this.answers.delete(step);
+    }
+    return this.trim(outs).map((o) => ({ ...o, offset: (o.offset ?? 0) + off }));
+  }
+
+  /** The world's melody voice: its own if it has one, else its sky voice played softer. */
+  private voice(deg: number, c: StepCtx, from: Out["from"], v: number, len?: number): Out[] {
+    const w = this.world;
+    const outs = w.voice ? w.voice(deg, c) : w.sky(deg, { ...c, bright: 0.45, speed: 0, pan: 0 }).map((o) => ({ ...o, note: { ...o.note, vel: o.note.vel * 0.75 } }));
+    return outs.map((o) => ({ ...o, from, note: { ...o.note, vel: o.note.vel * v, dur: len ? Math.min(o.note.dur, len * c.stepSec) : o.note.dur } }));
+  }
+
+  /** The theme: in the first two bars of every four (a question, then space), never over the player. */
+  private sing(step: number, c: StepCtx): Out[] {
+    const w = this.world;
+    const s = c.section;
+    if (w.ownsTheme || this.bridge || !s.motif || s.layers.lead < 0.3 || this.answers.size || this.mind.listening(step)) return [];
+    if (c.bar % 4 >= 2) return [];
+    if (s.motif !== this.theme.src) this.theme = { src: s.motif, line: parseLine(s.motif, w.stepsPerBar * 2) };
+    const at = (c.bar % 2) * w.stepsPerBar + c.pos;
+    return this.theme.line.filter((n) => n.step === at).flatMap((n) => this.voice(n.deg, c, "band", 0.5 + 0.5 * s.layers.lead, n.len));
+  }
+
+  /** Queue the band's answer to a phrase, starting on this downbeat. */
+  private answer(line: LineNote[], step: number) {
+    for (const n of line) {
+      const at = step + n.step;
+      const list = this.answers.get(at) ?? [];
+      list.push(...this.voice(n.deg, this.ctx(at), "echo", 0.9, n.len));
+      this.answers.set(at, list);
+    }
   }
 
   private leave(to: number, step: number, time: number) {
@@ -144,13 +177,13 @@ export class Conductor {
     const bars = kind === "powercut" ? 1 : 2;
     const end = step + bars * w.stepsPerBar;
     this.bridge = { to, kind, end, startStep: step };
+    this.answers.clear();
     const dur = bars * w.stepsPerBar * this.stepSec;
     const next = this.worlds[to];
     if (kind === "submerge") this.deps.sweep?.(700, time, dur * 0.9);
     if (kind === "liftoff" || kind === "sweep") this.deps.sweep?.(900, time, dur * 0.6);
     if (kind === "powercut") this.deps.tapeStop?.(time, 0.45);
     if (kind === "dissolve" || kind === "surface") this.deps.fx?.({ ...w.fx, hall: Math.max(w.fx.hall, 0.8), feedback: Math.min(0.75, w.fx.feedback + 0.2) }, time, dur * 0.5);
-    this.next = null;
     this.pendingStepSec = 60 / next.bpm / next.stepsPerBeat;
   }
 
@@ -165,44 +198,20 @@ export class Conductor {
     this.bridge = null;
     const w = this.world;
     w.reset(this.deps.seed + step);
+    this.mind.enter(w);
     this.secStart = step;
-    this.section = w.write(b.kind === "powercut" ? "bloom" : "pulse", this.r);
+    this.section = this.mind.write(b.kind === "powercut" ? "bloom" : "pulse", w);
     this.deps.fx?.(w.fx, time, b.kind === "powercut" ? 0.02 : 1.2);
     this.pendingStepSec = null;
     this.entered = true;
-    this.taps = {};
-    this.notes = 0;
     this.deps.onWorld?.(w);
     this.deps.onSection?.(this.section);
   }
 
   private advance(step: number) {
-    const name = NEXT[this.section.name];
-    this.section = this.next ?? this.world.write(name, this.r);
-    this.next = null;
+    this.section = this.mind.write(this.mind.next(this.section.name), this.world);
     this.secStart = step;
-    this.taps = {};
-    this.notes = 0;
     this.deps.onSection?.(this.section);
-  }
-
-  /** Ask Claude for the section after this one, while this one plays. */
-  private prepareNext() {
-    const c = this.deps.composer;
-    if (!c || this.asking) return;
-    this.asking = true;
-    const w = this.world;
-    const name = NEXT[this.section.name];
-    const forSection = this.section;
-    c({ world: w.id, genre: w.genre, name, stepsPerBar: w.stepsPerBar, previous: this.section, player: { notes: this.notes, taps: { ...this.taps } } })
-      .then((raw) => {
-        if (raw && this.section === forSection && this.deps.composer === c && !this.bridge)
-          this.next = { ...clampSection(raw, name, w.stepsPerBar), bars: Math.max(2, Math.min(16, (raw as Section).bars ?? 8)), by: "claude" };
-      })
-      .catch(() => {})
-      .finally(() => {
-        this.asking = false;
-      });
   }
 
   private trim(outs: Out[]): Out[] {
@@ -218,17 +227,20 @@ export class Conductor {
   /** The player tapped a creature. */
   tap(step: number, role: Role): Out[] {
     this.lastPlayer = step;
-    this.taps[role] = (this.taps[role] ?? 0) + 1;
-    this.notes++;
+    this.mind.touch(step);
+    this.answers.clear();
     return this.trim(this.world.tap(role, this.ctx(step)));
   }
 
-  /** The player touched open sky at x (0..1). */
-  sky(step: number, x: number, o: Pick<SkyCtx, "bright" | "speed" | "pan">): Out[] {
-    this.lastPlayer = step;
-    this.notes++;
-    this.taps.lead = (this.taps.lead ?? 0) + 1;
-    return this.trim(this.world.sky(this.skyDeg(x), { ...this.ctx(step), ...o }));
+  /** The player touched open sky at x (0..1). `listen` false: a sound check, not the player. */
+  sky(step: number, x: number, o: Pick<SkyCtx, "bright" | "speed" | "pan">, listen = true): Out[] {
+    const deg = this.skyDeg(x);
+    if (listen) {
+      this.lastPlayer = step;
+      this.mind.hear(step, deg);
+      this.answers.clear();
+    }
+    return this.trim(this.world.sky(deg, { ...this.ctx(step), ...o }));
   }
 
   /** Two octaves across the screen, in the playing world's own degrees. */

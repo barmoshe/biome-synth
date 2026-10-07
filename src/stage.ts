@@ -3,7 +3,7 @@
 import { Clock } from "./audio/clock";
 import { getEngine, readLevels, type Engine } from "./audio/engine";
 import type { NoteEvent } from "./audio/dsp/core";
-import { Conductor, type Composer } from "./music/conductor";
+import { Conductor } from "./music/conductor";
 import type { Section } from "./music/pattern";
 import type { Out } from "./music/world";
 import { ROLES, type Role } from "./shared/biomes";
@@ -12,15 +12,14 @@ import { BW, STAGE, WORLD } from "./world/types";
 import { World, type Critter } from "./world/world";
 import { loadPrefs, reducedMotion, savePrefs, type Prefs } from "./ui/prefs";
 import { MAX_SECONDS, shareOrSave, startRecording, type Recording } from "./ui/recorder";
-import { aiStatus, composeWithClaude, type AiStatus } from "./ai/compose";
-import { LyriaBed, type LyriaState } from "./ai/lyria";
 
 export type Snapshot = {
   started: boolean;
   biome: number;
   weights: number[];
   section: Section["name"];
-  sectionBy: "band" | "claude";
+  /** Whose theme the band is developing. */
+  sectionBy: "band" | "you";
   /** The world the band is playing (it lags the camera by a bridge). */
   genre: string;
   bpm: number;
@@ -29,7 +28,6 @@ export type Snapshot = {
   drift: 0 | 1 | 2;
   /** Fraction of the loop, 0..1, for the map strip. */
   pos: number;
-  bandMode: "local" | "claude" | "waking";
   help: boolean;
   menu: boolean;
   /** A message when something cannot work here (no AudioWorklet, audio blocked). */
@@ -43,10 +41,6 @@ export type Snapshot = {
   /** A short notice (saved, shared). */
   toast: string | null;
   prefs: Prefs;
-  /** What the server offers for the AI band, once asked. */
-  ai: AiStatus | null;
-  /** The Lyria bed's state; "playing" shows the AI disclosure. */
-  bed: LyriaState;
 };
 
 const DRIFT = [0, 9, 26];
@@ -94,8 +88,6 @@ export class Stage {
   private coachTimer = 0;
   private rec: Recording | null = null;
   private prefs: Prefs = loadPrefs();
-  private lyria: LyriaBed | null = null;
-  private steerTimer = 0;
   snap: Snapshot;
 
   constructor() {
@@ -111,10 +103,7 @@ export class Stage {
       sweep: (to, at, dur) => this.engine?.sweepLp(to, at, dur),
       tapeStop: (at, seconds) => this.engine?.post({ type: "tapestop", frame: Math.round(at * this.engine.ctx.sampleRate), seconds }),
       onSection: () => this.emit(),
-      onWorld: (w) => {
-        this.lyria?.enter(w, this.conductor.section.energy);
-        this.emit();
-      },
+      onWorld: () => this.emit(),
       daylight: () => {
         const h = new Date().getHours() + new Date().getMinutes() / 60;
         return 0.5 - 0.5 * Math.cos(((h - 2) / 24) * Math.PI * 2);
@@ -146,7 +135,6 @@ export class Stage {
       bars: c.bars,
       drift: s?.drift ?? this.prefs.drift,
       pos: (((this.world.centerX % WORLD) + WORLD) % WORLD) / WORLD,
-      bandMode: s?.bandMode ?? "local",
       help: s?.help ?? false,
       menu: s?.menu ?? false,
       error: s?.error ?? null,
@@ -155,8 +143,6 @@ export class Stage {
       recording: s?.recording ?? null,
       toast: s?.toast ?? null,
       prefs: this.prefs,
-      ai: s?.ai ?? null,
-      bed: this.lyria?.state ?? "off",
     };
   }
   private emit(patch: Partial<Snapshot> = {}) {
@@ -253,53 +239,10 @@ export class Stage {
     e.setVolume(this.prefs.muted ? 0 : this.prefs.volume);
     this.postBed();
     // A three-note hello so you know sound works, then the band.
-    [0, 0.5, 1].forEach((x, i) => this.play(this.conductor.sky(0, x, { bright: 0.6, speed: 0, pan: x - 0.5 }), now + i * 0.12, true));
+    [0, 0.5, 1].forEach((x, i) => this.play(this.conductor.sky(0, x, { bright: 0.6, speed: 0, pan: x - 0.5 }, false), now + i * 0.12, true));
     clock.start(now + 0.5);
     this.lastInput = performance.now();
     this.emit({ started: true });
-  }
-
-  setComposer(c: Composer | null, mode: Snapshot["bandMode"]) {
-    this.conductor.setComposer(c);
-    this.emit({ bandMode: mode });
-  }
-
-  // ---------- the AI band ----------
-
-  /** Ask the server once what it offers; the menu only shows what works. */
-  async checkAi() {
-    if (this.snap.ai) return this.snap.ai;
-    const ai = await aiStatus();
-    this.emit({ ai });
-    return ai;
-  }
-
-  /** Claude as conductor: on, it writes each next section; off, the worlds write their own. */
-  async toggleClaude() {
-    if (this.snap.bandMode !== "local") return this.setComposer(null, "local");
-    const ai = await this.checkAi();
-    if (!ai.claude) return this.toast("The AI conductor is not set up here");
-    this.setComposer(composeWithClaude, "claude");
-    this.toast("Claude writes the next section");
-  }
-
-  /** The Lyria bed: an AI audio stream under the band. */
-  async toggleBed() {
-    const e = this.engine;
-    if (!e) return;
-    if (this.lyria && this.lyria.state !== "off" && this.lyria.state !== "error") {
-      this.lyria.stop();
-      return this.emit();
-    }
-    const ai = await this.checkAi();
-    if (!ai.lyria) return this.toast("The AI bed is not set up here");
-    this.lyria ??= new LyriaBed(e);
-    this.lyria.onState = (s, detail) => {
-      if (detail) this.toast(detail);
-      this.emit();
-    };
-    this.lyria.start(this.conductor.world);
-    this.emit();
   }
 
   // ---------- settings, guide, recording ----------
@@ -395,9 +338,7 @@ export class Stage {
   }
 
   private postBed() {
-    // With the Lyria bed playing, the synthesized ambience steps back.
-    const lyriaOn = this.lyria?.state === "playing";
-    this.engine?.post({ type: "bed", weights: this.world.weights(), level: lyriaOn ? 0.18 : 0.5 });
+    this.engine?.post({ type: "bed", weights: this.world.weights(), level: 0.5 });
   }
 
   /** The step that is sounding now. */
@@ -457,11 +398,6 @@ export class Stage {
       if (this.bedTimer <= 0) {
         this.bedTimer = 0.2;
         this.postBed();
-      }
-      this.steerTimer -= dt;
-      if (this.lyria && this.steerTimer <= 0) {
-        this.steerTimer = 0.5;
-        this.lyria.steer(w.weights(), this.conductor.section, this.conductor.world);
       }
 
       // Left alone for a while, the creatures start to solo (Bloom plays itself, too).

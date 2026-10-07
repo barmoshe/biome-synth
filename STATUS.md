@@ -1,7 +1,8 @@
 # Biome Synth (reinvented) - STATUS
 
 A pixel-art world you play: one looping side-scroller (Orbit, Aurora, Deep, Canopy, Neon), every
-creature is an instrument, each world its own genre, Claude as conductor, an optional Lyria bed.
+creature is an instrument, each world its own genre, and a composer on the device that listens to
+the player (it replaced the Claude conductor and the Lyria bed on 2026-10-07).
 Plan: `~/.claude/plans/i-made-the-biome-bright-liskov.md` (approved 2026-10-07). Production
 checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biome-synth`, ADR 0544.
 
@@ -21,13 +22,16 @@ checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biom
 | 6+7 | Claude conductor and Lyria bed through one Worker | 8bb0a71 | 57 tests; Worker checked live with the fixture conductor (status, compose, production build) |
 | 8 | PWA, icons, share image, README, CI | bdda65b | CI green |
 | 8 | Tile-mapped layer drawing | 544c162 | Frame cost about 12 ms to 1.2-3.9 ms headless |
+| 9 | On-device composer replaces Claude and Lyria: listens, learns, answers, develops the player's theme, chord walks, form that follows the player | (this commit) | 67 tests; played live: a 5-note phrase was answered, became the theme in Orbit, and carried into Neon; no console errors |
 
 ## Next (needs Bar)
 
-- Listen to the renders (`SNAP=render npx vitest run` writes them to ./renders) and react.
-- Keys as Worker secrets for a live check of the conductor and the bed.
-- The deploy target: bar-builds.com's DNS is at GoDaddy (apex on Vercel), and a Worker custom
-  domain needs the zone on Cloudflare.
+- Delete the retired AI files (the agent's delete was blocked): `src/ai/`, `src/worker/`,
+  `tests/worker.test.ts`, `tsconfig.worker.json`, the `pcm-bed` processor in `src/audio/worklet.ts`
+  with `bedPlayer`/`bedIn`/`setBedLevel` in `src/audio/engine.ts`, the `@anthropic-ai/sdk`, `hono` and
+  `@cloudflare/workers-types` packages, and `main`/`vars`/`ratelimits` in `wrangler.jsonc`.
+- Play it and react to the composer (answers, themes).
+- The deploy target: now a static site, so a bar-builds.com subdomain on Vercel works with the DNS as it is.
 - A license.
 
 ## Deviations from the plan
@@ -35,5 +39,4 @@ checklist: `docs/PRODUCTION.md`. Workshop pointer: `bar_builds/lab/personal/biom
 - Ambient beds are synthesized, not the original's recordings: two of those had unclear licences.
 - Resolution raised from 180 to 270 art px after a pixel-art research pass (Bar asked for higher resolution and better art).
 - Worlds became distinct genres with their own clocks instead of one shared band (Bar: the worlds needed more difference).
-- Claude returns the section through structured output, not a forced tool call (Opus 5.5 rejects forced tool choice).
-- Lyria runs through a Worker relay instead of ephemeral tokens: the relay holds the key and works whether or not tokens cover Lyria.
+- The AI band (Claude conductor, Lyria bed, Worker) was built, then replaced by an on-device composer: Bar wanted no dependence on outside services or keys (2026-10-07).

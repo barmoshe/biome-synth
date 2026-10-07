@@ -54,6 +54,10 @@ export function deep(): WorldMusic {
     humanize: 0.004,
     barScale: 1.25,
     level: 1.6,
+    // Few notes, wide apart, fifths and fourths: the delay fills the rest.
+    idiom: ["0:2:0 6:2:4 12:4:2", "2:2:4 6:2:4 10:4:3 16:6:0", "0:4:7 8:4:4 16:8:2", "0:2:4 3:2:3 6:6:0"],
+    // Em11, A13 and Dmaj9, after Basic Channel's two-chord loops with a third for colour.
+    chordGraph: { 0: [3, 6], 3: [0, 6], 6: [0, 3] },
     fx: { room: 0.15, hall: 0.55, delayTime: (60 / 118) * 0.75, feedback: 0.55, delayLp: 1800, delayWet: 0.55, masterLp: 6500, wobble: 4, wobbleHz: 0.4, duck: 0, duckRelease: 0.2 },
     reset() {
       root = 0;

@@ -1,8 +1,8 @@
 // Canopy: 12/8 at sunset. The only ternary world: the bembe bell timeline (a rotation of
 // E(7,12), Toussaint), a kick on the dotted quarters, a shaker on every eighth, a log drum, and
-// highlife changes A, D, E every bar. The mechanic is kotekan: the fireflies and the parrot split
-// one fast melody between them, on-beat and off-beat, so together they play a line neither plays
-// alone. Play a phrase in the sky and the parrot answers it, horn-like, a bar later.
+// highlife changes every bar. The mechanic is kotekan: the fireflies and the parrot split one fast
+// melody between them, on-beat and off-beat, so together they play a line neither plays alone.
+// The parrot is the band's horn: it sings the theme and answers the player's phrases.
 import type { Role } from "../../shared/biomes";
 import { SCALES } from "../theory";
 import { baseSection, euclid, hz, out, vel, type Out, type StepCtx, type WorldMusic } from "../world";
@@ -26,9 +26,6 @@ const snapPent = (d: number) => {
 
 export function canopy(): WorldMusic {
   let line = 2;
-  let phrase: { step: number; deg: number }[] = [];
-  let lastPlayer = -1e9;
-  const pending = new Map<number, Out[]>();
 
   const chordRoot = (c: StepCtx) => (c.section.chords.length ? c.section.chords[c.bar % c.section.chords.length] : [0, 3, 4, 3][c.bar % 4]);
 
@@ -63,7 +60,7 @@ export function canopy(): WorldMusic {
   };
 
   const horn = (deg: number, c: StepCtx): Out =>
-    out("lead", { patch: "saw", freq: hz(W, deg, 0), vel: 0.18, dur: c.stepSec * 2.5, attack: 0.03, release: 0.18, cutoff: 2200, bend: -1.5, sweep: 0.06 }, { send: 0.25, from: "echo" });
+    out("lead", { patch: "saw", freq: hz(W, deg, 0), vel: 0.18, dur: c.stepSec * 2.5, attack: 0.03, release: 0.18, cutoff: 2200, bend: -1.5, sweep: 0.06 }, { send: 0.25, from: "band" });
 
   const w: WorldMusic = {
     id: "jungle",
@@ -77,12 +74,14 @@ export function canopy(): WorldMusic {
     humanize: 0.01,
     barScale: 0.75,
     level: 1.55,
+    // Pentatonic call phrases that fall to the tonic, as on a highlife horn line.
+    idiom: ["0:2:4 3:2:5 6:2:4 9:3:2", "0:1:7 2:1:5 4:2:4 7:2:2 9:3:0", "0:3:2 3:3:4 6:3:5 9:3:4 12:6:2", "1:2:5 3:2:4 5:1:2 6:6:0"],
+    // I, IV, V and vi: highlife's changes.
+    chordGraph: { 0: [3, 4, 5], 3: [4, 0], 4: [0, 3], 5: [3, 4] },
+    voice: (deg, c) => [horn(snapPent(deg), c)],
     fx: { room: 0.45, hall: 0.06, delayTime: (60 / 108) / 3 * 2, feedback: 0.18, delayLp: 4000, delayWet: 0.12, masterLp: 17000, wobble: 0, wobbleHz: 0.3, duck: 0, duckRelease: 0.2 },
     reset() {
       line = 2;
-      phrase = [];
-      lastPlayer = -1e9;
-      pending.clear();
     },
     write(name) {
       return baseSection(name, w);
@@ -109,22 +108,6 @@ export function canopy(): WorldMusic {
         if (c.pos % 2 === 0 && L.arp > 0.05) outs.push(...pitched("arp", deg, c, "band", L.arp));
         if (c.pos % 2 === 1 && L.lead > 0.05) outs.push(...pitched("lead", deg, c, "band", L.lead));
       }
-      // Call and response: a bar after the player's phrase, the parrot answers.
-      if (phrase.length >= 2 && c.pos === 0 && c.step - lastPlayer >= 12) {
-        const t0 = phrase[0].step;
-        for (const n of phrase.slice(0, 8)) {
-          const at = c.step + Math.min(11, n.step - t0);
-          const list = pending.get(at) ?? [];
-          list.push(horn(snapPent(n.deg + 2), c));
-          pending.set(at, list);
-        }
-        phrase = [];
-      }
-      const due = pending.get(c.step);
-      if (due) {
-        outs.push(...due);
-        pending.delete(c.step);
-      }
       return outs;
     },
     tap(role, c) {
@@ -136,9 +119,6 @@ export function canopy(): WorldMusic {
       return pitched(role, role === "bass" || role === "pad" ? root : root + line, c, "player", 1.3);
     },
     sky(deg, c) {
-      phrase.push({ step: c.step, deg });
-      if (phrase.length > 12) phrase.shift();
-      lastPlayer = c.step;
       return [out("lead", { patch: "pluck", freq: hz(W, deg, 1), vel: 0.38 + 0.2 * c.bright, dur: c.stepSec * 2, bright: 0.5 + 0.4 * c.bright, pan: c.pan }, { send: 0.2, from: "player" })];
     },
   };

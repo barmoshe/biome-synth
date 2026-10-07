@@ -61,6 +61,10 @@ export function neon(): WorldMusic {
     humanize: 0.003,
     barScale: 1,
     level: 1.25,
+    // Brass phrases that climb to the seventh and fall back, with 2-step pickups.
+    idiom: ["0:2:4 4:2:6 6:4:7 12:2:4", "0:3:0 3:3:2 6:2:4 10:6:6", "0:2:7 2:2:6 4:4:4 10:2:2 12:4:0", "3:1:2 4:4:4 11:1:4 12:4:2"],
+    // i, VI, III, VII and iv: the minor loops of garage and Vangelis.
+    chordGraph: { 0: [5, 3, 6], 5: [2, 6], 2: [6, 3], 6: [0, 5], 3: [6, 4], 4: [0] },
     fx: { room: 0.5, hall: 0.25, delayTime: (60 / 132) * 0.75, feedback: 0.3, delayLp: 3500, delayWet: 0.22, masterLp: 18000, wobble: 0, wobbleHz: 0.3, duck: 0.72, duckRelease: 0.2 },
     reset() {
       kick = KICKS[0];
