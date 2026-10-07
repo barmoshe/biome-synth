@@ -1,6 +1,6 @@
 // An indexed pixel buffer with the few primitives the art needs (after vote-tree's Pix in
 // ../vote-tree/src/web/pixel/canvas.ts, but indexed and wrapping in x, because the world loops).
-import { T } from "./palette";
+import { T, type Ramp } from "./palette";
 
 // 4x4 Bayer thresholds, 0..1.
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
@@ -80,6 +80,47 @@ export class Strip {
         this.set(x, y, c);
       }
     }
+  }
+
+  /**
+   * A shaded ellipse: each pixel takes a ramp step from how much its surface faces the light
+   * (lx, ly points toward the light, screen y down). Hard bands, no dither: sprites stay clean.
+   */
+  blob(cx: number, cy: number, rx: number, ry: number, ramp: Ramp, lx = -0.6, ly = -0.8, bias = 0) {
+    const n = ramp.length;
+    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
+      for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+        const nx = (x - cx) / (rx + 0.5);
+        const ny = (y - cy) / (ry + 0.5);
+        const r2 = nx * nx + ny * ny;
+        if (r2 > 1) continue;
+        const nz = Math.sqrt(1 - r2);
+        const lit = (nx * lx + ny * ly) * 0.75 + nz * 0.55 + bias;
+        const k = Math.max(0, Math.min(n - 1, Math.floor(((lit + 0.35) / 1.4) * n)));
+        this.set(x, y, ramp[k]);
+      }
+  }
+  /** A shaded box: lit face, body, shadow face, by the light's side. */
+  box(x: number, y: number, w: number, h: number, ramp: Ramp, lx = -0.6) {
+    const n = ramp.length;
+    const mid = Math.min(n - 1, Math.floor(n / 2));
+    this.rect(x, y, w, h, ramp[mid]);
+    const litX = lx < 0 ? x : x + w - 1;
+    const shX = lx < 0 ? x + w - 1 : x;
+    this.rect(litX, y, 1, h, ramp[Math.min(n - 1, mid + 1)]);
+    this.rect(shX, y, 1, h, ramp[Math.max(0, mid - 1)]);
+    this.rect(x, y, w, 1, ramp[Math.min(n - 1, mid + 1)]);
+  }
+  /** Copy a rectangle of pixels (non-transparent) from another strip. */
+  blit(src: Strip, sx: number, sy: number, w: number, h: number, dx: number, dy: number) {
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const c = src.px[(sy + y) * src.w + sx + x];
+        if (c !== T) this.set(dx + x, dy + y, c);
+      }
+  }
+  clear(c = T) {
+    this.px.fill(c);
   }
   /** Rows of characters through a key; '.' and unknown characters are transparent. */
   sprite(x: number, y: number, rows: readonly string[], key: Record<string, number>, flip = false) {

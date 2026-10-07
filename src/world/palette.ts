@@ -49,15 +49,57 @@ const rgba = (hex: string) => {
 };
 export const RGBA = HEX.map(rgba);
 
-/** The per-frame lookup table: palette + cycle slots at their current phase. */
+const lerpWord = (a: number, b: number, t: number) => {
+  const r = (a & 255) + ((b & 255) - (a & 255)) * t;
+  const g = ((a >>> 8) & 255) + (((b >>> 8) & 255) - ((a >>> 8) & 255)) * t;
+  const bl = ((a >>> 16) & 255) + (((b >>> 16) & 255) - ((a >>> 16) & 255)) * t;
+  return ((255 << 24) | (Math.round(bl) << 16) | (Math.round(g) << 8) | Math.round(r)) >>> 0;
+};
+
+/**
+ * The per-frame lookup table: palette + cycle slots at their current phase. Between whole steps
+ * the slot colour blends to the next ramp colour (Huckaby's BlendShift for Ferrari's scenes), so
+ * slow cycles glide instead of ticking.
+ */
 export function buildLut(lut: Uint32Array, phases: number[]) {
   for (let i = 0; i < 64; i++) lut[i] = RGBA[i];
   for (let c = 0; c < CYCLES.length; c++) {
     const ramp = CYCLES[c];
-    const ph = Math.floor(phases[c] ?? 0);
-    for (let k = 0; k < 8; k++) lut[CYCLE_BASE + c * 8 + k] = RGBA[ramp[(((k + ph) % ramp.length) + ramp.length) % ramp.length]];
+    const n = ramp.length;
+    const p = phases[c] ?? 0;
+    const ph = Math.floor(p);
+    const fr = p - ph;
+    for (let k = 0; k < 8; k++) {
+      const i0 = ((((k + ph) % n) + n) % n);
+      lut[CYCLE_BASE + c * 8 + k] = lerpWord(RGBA[ramp[i0]], RGBA[ramp[(i0 + 1) % n]], fr);
+    }
   }
   lut[T] = RGBA[P.ink];
 }
 
 export const cssColor = (i: number) => `#${HEX[i]}`;
+
+/** Material ramps, dark to light, for shading shapes (hue-shifted along Resurrect 64's own ramps). */
+export const R = {
+  leaf: [P.pineDeep, P.pine, P.green, P.leaf, P.chartreuse],
+  moss: [P.sageDeep, P.sage, P.sageLight, P.sagePale],
+  fur: [P.barkDeep, P.brownDeep, P.rust, P.clay, P.sand],
+  skin: [P.rust, P.clay, P.sand, P.peach, P.blush],
+  ice: [P.navy, P.blue, P.sky, P.skyLight, P.white],
+  snow: [P.lavGrey, P.mist, P.pale, P.white],
+  rock: [P.ink, P.plum, P.dusk, P.lavGrey, P.mist],
+  stone: [P.charcoal, P.sageDeep, P.sage, P.sageLight],
+  pink: [P.magentaDeep, P.pinkDeep, P.hotPink, P.pink, P.blush],
+  rose: [P.berry, P.plumRose, P.rose, P.pinkDeep, P.salmon],
+  gold: [P.rust, P.amber, P.gold, P.goldGlow],
+  red: [P.wine, P.crimson, P.scarlet, P.anemone, P.salmon],
+  orange: [P.rust, P.clay, P.flame, P.orange, P.peach],
+  teal: [P.tealDeep, P.teal, P.aqua, P.mint, P.foam],
+  violet: [P.barkDeep, P.violet, P.purple, P.lilac, P.pinkPale],
+  metal: [P.ink, P.charcoal, P.dusk, P.lavGrey, P.mist, P.pale],
+  indigo: [P.ink, P.navy, P.indigo, P.blue, P.sky],
+  sand: [P.rust, P.clay, P.sand, P.honey, P.blush],
+  ink: [P.ink, P.plum, P.dusk],
+  white: [P.mist, P.pale, P.white],
+} as const;
+export type Ramp = readonly number[];

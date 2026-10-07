@@ -37,7 +37,7 @@ export class Stage {
   private scale = 1;
   private raf = 0;
   private last = 0;
-  private visQueue: { time: number; role: Role; from: Hit["from"]; vel: number }[] = [];
+  private visQueue: { time: number; role: Role; from: Hit["from"]; vel: number; who?: Critter | null }[] = [];
   private levels = { rms: 0, low: 0, mid: 0, high: 0 };
   private travel: { from: number; to: number; t: number } | null = null;
   private keysHeld = new Set<string>();
@@ -123,14 +123,20 @@ export class Stage {
     this.clock?.stop();
   }
 
-  /** Integer scale: the art never blurs. Height targets 180 art px, width at least 200. */
+  /**
+   * Integer scale in device pixels, so the art never blurs. Aim for a logical height near 270
+   * (216-288); on narrow screens let the width decide (about 280 wide) and give the rest to sky.
+   */
   private fit = () => {
     const c = this.canvas;
     if (!c) return;
     const dpr = window.devicePixelRatio || 1;
-    const vw = window.innerWidth * dpr;
-    const vh = window.innerHeight * dpr;
-    const k = Math.max(1, Math.floor(Math.min(vh / STAGE, vw / 200)));
+    const vw = Math.round(window.innerWidth * dpr);
+    const vh = Math.round(window.innerHeight * dpr);
+    let k = Math.max(1, Math.round(vh / STAGE));
+    while (k > 1 && vh / k < 216) k--;
+    while (vh / k > 288) k++;
+    k = Math.max(1, Math.min(k, Math.floor(vw / 280)));
     const W = Math.ceil(vw / k);
     const H = Math.ceil(vh / k);
     this.scale = k / dpr;
@@ -229,9 +235,18 @@ export class Stage {
     if (this.engine) {
       readLevels(this.engine, this.levels);
       const t = this.engine.ctx.currentTime;
+      // Anticipation: about 70 ms before a band note, its critter is chosen and starts to squash,
+      // so the stretch lands on the beat.
+      for (const v of this.visQueue) {
+        if (v.time - t > 0.07) break;
+        if (v.from !== "player" && v.who === undefined) {
+          v.who = w.nextFor(v.role);
+          if (v.who) v.who.pre = 1;
+        }
+      }
       while (this.visQueue.length && this.visQueue[0].time <= t) {
         const v = this.visQueue.shift()!;
-        if (v.from !== "player") w.play(v.role, v.from, v.vel);
+        if (v.from !== "player") w.play(v.role, v.from, v.vel, v.who ?? undefined);
       }
       if (this.clock) beat = ((this.audibleStep() % 4) + 4) % 4 / 4;
       this.bedTimer -= dt;
@@ -273,6 +288,12 @@ export class Stage {
   };
 
   private onMove = (e: PointerEvent) => {
+    if (e.pointerType === "mouse" && this.canvas) {
+      const [hx, hy] = this.toArt(e);
+      const over = this.world.pick(hx, hy, 2);
+      this.world.setHover(over);
+      this.canvas.style.cursor = over ? "pointer" : "crosshair";
+    }
     const info = this.pointers.get(e.pointerId);
     if (!info || info.critter || !this.engine) return;
     const [x, y] = this.toArt(e);

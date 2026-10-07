@@ -47,7 +47,7 @@ it("snaps", async () => {
   const dir = process.env.SNAP_DIR ?? "snaps";
   mkdirSync(dir, { recursive: true });
   const w = new World();
-  const [sw, sh] = (process.env.SNAP_SIZE ?? "378x190").split("x").map(Number);
+  const [sw, sh] = (process.env.SNAP_SIZE ?? "504x253").split("x").map(Number);
   w.resize(sw, sh);
   const shots: [string, number][] = [];
   ["orbit", "aurora", "deep", "canopy", "neon"].forEach((n, i) => shots.push([n, i * BW + BW / 2]));
@@ -62,4 +62,4 @@ it("snaps", async () => {
     w.render(ctx, 3.3, { rms: 0.3 }, 0);
     writeFileSync(`${dir}/${name}.png`, png(sw, sh, ctxImg.data, Number(process.env.SNAP_SCALE ?? 3)));
   }
-});
+}, 120000);

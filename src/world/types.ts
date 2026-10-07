@@ -2,19 +2,23 @@ import type { Role } from "../shared/biomes";
 import type { Strip } from "./strip";
 
 /** Width of one biome on the near layer, in art pixels. */
-export const BW = 960;
-/** Critter x positions are authored on a 768-wide biome and spread to BW. */
-export const AUTHOR_W = 768;
+export const BW = 1200;
+/** Critter x positions are authored on this width and spread to BW. */
+export const AUTHOR_W = 1200;
 export const NB = 5;
 export const WORLD = BW * NB;
 /** Half-width of the dithered border between biomes, near layer. */
-export const BLEND = 150;
-/** Height of the painted stage; taller screens get more sky above it. */
-export const STAGE = 180;
-export const GROUND = 152;
+export const BLEND = 180;
+/** Height of the painted stage; taller screens get more sky above it, shorter ones lose sky. */
+export const STAGE = 270;
+export const GROUND = 228;
 
-/** Parallax factors: far, mid, near. */
-export const LAYER_F = [0.45, 0.7, 1] as const;
+/** Parallax factors: far, mid, near, foreground. */
+export const LAYER_F = [0.45, 0.7, 1, 1.3] as const;
+/** How far each layer is pulled toward the biome's air colour (atmospheric perspective). */
+export const LAYER_FOG = [0.4, 0.12, 0, 0] as const;
+/** Extra fog pooled toward the bottom of each layer. */
+export const LAYER_POOL = [0.26, 0.16, 0, 0] as const;
 
 export type PaintCtx = {
   s: Strip;
@@ -38,22 +42,32 @@ export type Anim = {
 export type CritterSpec = {
   name: string;
   role: Role;
-  /** x within the biome (0..BW) and y on the stage, top-left of the hit box. */
+  /** x within the biome (0..AUTHOR_W) and y on the stage, top-left of the hit box. */
   x: number;
   y: number;
   w: number;
   h: number;
-  /** Draw at screen art coords (sx, sy) = the hit box's top-left. */
+  /** Draw at (sx, sy) = the hit box's top-left. */
   draw(f: Strip, sx: number, sy: number, a: Anim): void;
+  /** A soft light this critter always gives off (fireflies, jellyfish, signs): radius in px. */
+  glow?: number;
+  /** Skip the outline (things made of light, wisps). */
+  noOutline?: boolean;
 };
 
 export type BiomeArt = {
-  /** Paint the sky for a screen of w x h (stage at the bottom 180 rows). */
+  /** Paint the sky for a screen of w x h (stage at the bottom STAGE rows). */
   sky(s: Strip, w: number, h: number): void;
   far(c: PaintCtx): void;
   mid(c: PaintCtx): void;
   near(c: PaintCtx): void;
+  /** Dark foreground silhouettes passing in front of everything. */
+  front?(c: PaintCtx): void;
   critters: CritterSpec[];
+  /** The colour of the air: distant layers fade toward it. */
+  air: number;
+  /** Unit vector toward the main light (sun, moon, surface), for rim light. */
+  toLight: [number, number];
   /** Particles drifting over this biome: snow, bubbles, fireflies, rain, stardust. */
   weather?: { kind: "snow" | "bubbles" | "fireflies" | "rain" | "dust"; rate: number };
 };
